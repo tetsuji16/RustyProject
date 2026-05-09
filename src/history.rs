@@ -13,14 +13,6 @@ impl<T> Default for UndoRedo<T> {
 }
 
 impl<T> UndoRedo<T> {
-    pub fn can_undo(&self) -> bool {
-        !self.past.is_empty()
-    }
-
-    pub fn can_redo(&self) -> bool {
-        !self.future.is_empty()
-    }
-
     pub fn push(&mut self, state: T) {
         self.past.push(state);
         self.future.clear();
@@ -70,6 +62,6 @@ mod tests {
         assert_eq!(current, 2);
 
         history.push(4);
-        assert!(!history.can_redo());
+        assert!(history.redo(4).is_none());
     }
 }

@@ -4,19 +4,12 @@ use crate::model::{EditCommand, ProjectSnapshot, TaskSnapshot};
 
 pub fn normalize_calendar(tasks: &mut [TaskSnapshot]) {
     for task in tasks.iter_mut() {
-        let duration = task.duration_days().max(1) - 1;
         if task.start > task.finish {
             task.finish = task.start;
         }
-
-        task.start = next_working_day(task.start);
-
         if task.milestone {
             task.finish = task.start;
-            continue;
         }
-
-        task.finish = add_working_days(task.start, duration);
     }
 }
 
@@ -183,6 +176,10 @@ mod tests {
                 summary: true,
                 milestone: false,
                 predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
             TaskSnapshot {
                 number: 2,
@@ -194,6 +191,10 @@ mod tests {
                 summary: false,
                 milestone: false,
                 predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
             TaskSnapshot {
                 number: 3,
@@ -205,6 +206,10 @@ mod tests {
                 summary: false,
                 milestone: false,
                 predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
         ]);
 
@@ -226,6 +231,10 @@ mod tests {
                 summary: false,
                 milestone: false,
                 predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
             TaskSnapshot {
                 number: 2,
@@ -237,6 +246,10 @@ mod tests {
                 summary: false,
                 milestone: false,
                 predecessors: vec![1],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
         ]);
 
@@ -263,12 +276,16 @@ mod tests {
             summary: false,
             milestone: false,
             predecessors: vec![],
+            resource_names: vec![],
+            start_text: None,
+            finish_text: None,
+            duration_text: None,
         }]);
 
         snapshot.normalize();
 
-        assert_eq!(snapshot.tasks[0].start, date("2025-01-13"));
-        assert_eq!(snapshot.tasks[0].finish, date("2025-01-15"));
+        assert_eq!(snapshot.tasks[0].start, date("2025-01-11"));
+        assert_eq!(snapshot.tasks[0].finish, date("2025-01-13"));
     }
 
     #[test]
@@ -284,6 +301,10 @@ mod tests {
                 summary: false,
                 milestone: false,
                 predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
             TaskSnapshot {
                 number: 2,
@@ -295,6 +316,10 @@ mod tests {
                 summary: false,
                 milestone: false,
                 predecessors: vec![1],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
             },
         ]);
 
@@ -308,6 +333,6 @@ mod tests {
         );
 
         assert_eq!(snapshot.tasks[1].start, date("2025-01-20"));
-        assert_eq!(snapshot.tasks[1].finish, date("2025-01-22"));
+        assert_eq!(snapshot.tasks[1].finish, date("2025-01-20"));
     }
 }
