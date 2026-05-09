@@ -137,6 +137,10 @@ impl JavaBridge {
                             .parse::<bool>()
                             .map_err(|err| format!("Invalid milestone flag: {err}"))?,
                         predecessors: preds,
+                        resource_names: Vec::new(),
+                        start_text: None,
+                        finish_text: None,
+                        duration_text: None,
                     });
                 }
                 _ => return Err(format!("Malformed bridge response: {line}")),
@@ -202,24 +206,70 @@ pub struct TaskSnapshot {
     pub summary: bool,
     pub milestone: bool,
     pub predecessors: Vec<usize>,
+    pub resource_names: Vec<String>,
+    pub start_text: Option<String>,
+    pub finish_text: Option<String>,
+    pub duration_text: Option<String>,
 }
 
 impl TaskSnapshot {
+    pub fn start_label(&self) -> String {
+        self.start_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("{} 8:00", self.start.format("%Y/%m/%d")))
+    }
+
+    pub fn finish_label(&self) -> String {
+        self.finish_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("{} 17:00", self.finish.format("%Y/%m/%d")))
+    }
+
     pub fn duration_days(&self) -> i64 {
         if self.milestone {
             0
         } else {
-            (self.finish - self.start).num_days() + 1
+            working_days_inclusive(self.start, self.finish)
         }
     }
 
     pub fn duration_label(&self) -> String {
+        if let Some(value) = self
+            .duration_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            return value.to_string();
+        }
         if self.milestone {
             "0 days".to_string()
         } else {
-            format!("{} days", self.duration_days())
+            let days = self.duration_days();
+            if days == 1 {
+                "1 day".to_string()
+            } else {
+                format!("{days} days")
+            }
         }
     }
+}
+
+fn working_days_inclusive(start: NaiveDate, finish: NaiveDate) -> i64 {
+    use chrono::Datelike;
+
+    let mut days = 0;
+    let mut date = start;
+    while date <= finish {
+        if matches!(date.weekday().number_from_monday(), 1..=5) {
+            days += 1;
+        }
+        date += chrono::Duration::days(1);
+    }
+    days
 }
 
 fn decode(value: &str) -> String {

@@ -31,25 +31,6 @@ pub struct ProjectSnapshot {
     pub tasks: Vec<TaskSnapshot>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub enum LinkType {
-    #[serde(rename = "FS")]
-    FinishToStart,
-    #[serde(rename = "SS")]
-    StartToStart,
-    #[serde(rename = "FF")]
-    FinishToFinish,
-    #[serde(rename = "SF")]
-    StartToFinish,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct Dependency {
-    pub predecessor: usize,
-    pub link_type: LinkType,
-    pub lag: i64, // in days
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TaskSnapshot {
     pub number: usize,
@@ -60,7 +41,15 @@ pub struct TaskSnapshot {
     pub indent: usize,
     pub summary: bool,
     pub milestone: bool,
-    pub dependencies: Vec<Dependency>,
+    pub predecessors: Vec<usize>,
+    #[serde(default)]
+    pub resource_names: Vec<String>,
+    #[serde(default)]
+    pub start_text: Option<String>,
+    #[serde(default)]
+    pub finish_text: Option<String>,
+    #[serde(default)]
+    pub duration_text: Option<String>,
 }
 
 impl ProjectSnapshot {
@@ -68,21 +57,8 @@ impl ProjectSnapshot {
         let mut tasks = Vec::new();
 
         macro_rules! task {
-            ($id:expr, $name:expr, $start:expr, $finish:expr, $progress:expr, $indent:expr, $summary:expr, $milestone:expr $(, $pred:expr $(, $link:expr, $lag:expr)?)*) => {{
-                let mut deps = Vec::new();
-                $(
-                    deps.push(Dependency {
-                        predecessor: $pred,
-                        link_type: match $link {
-                            "FS" => LinkType::FinishToStart,
-                            "SS" => LinkType::StartToStart,
-                            "FF" => LinkType::FinishToFinish,
-                            "SF" => LinkType::StartToFinish,
-                            _ => LinkType::FinishToStart, // default
-                        },
-                        lag: $lag.unwrap_or(0),
-                    });
-                )*
+            ($id:expr, $name:expr, $start:expr, $finish:expr, $progress:expr, $indent:expr, $summary:expr, $milestone:expr $(, $pred:expr)*) => {{
+                let predecessors = vec![$($pred),*];
                 tasks.push(TaskSnapshot {
                     number: $id,
                     name: $name.to_string(),
@@ -92,7 +68,11 @@ impl ProjectSnapshot {
                     indent: $indent,
                     summary: $summary,
                     milestone: $milestone,
-                    dependencies: deps,
+                    predecessors,
+                    resource_names: Vec::new(),
+                    start_text: None,
+                    finish_text: None,
+                    duration_text: None,
                 });
             }};
         }
@@ -444,6 +424,7 @@ impl ProjectSnapshot {
     }
 
     pub fn apply_edit(&mut self, edit: EditCommand) {
+        self.clear_display_texts();
         schedule::apply_edit(self, edit);
     }
 
@@ -510,26 +491,76 @@ impl ProjectSnapshot {
         self.start_date = start;
         self.end_date = end;
     }
+
+    pub(crate) fn clear_display_texts(&mut self) {
+        for task in &mut self.tasks {
+            task.start_text = None;
+            task.finish_text = None;
+            task.duration_text = None;
+        }
+    }
 }
 
 impl TaskSnapshot {
+    pub fn start_label(&self) -> String {
+        self.start_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("{} 8:00", self.start.format("%Y/%m/%d")))
+    }
+
+    pub fn finish_label(&self) -> String {
+        self.finish_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("{} 17:00", self.finish.format("%Y/%m/%d")))
+    }
+
     pub fn duration_days(&self) -> i64 {
         if self.milestone {
             0
         } else {
-            (self.finish - self.start).num_days() + 1
+            working_days_inclusive(self.start, self.finish)
         }
     }
 
     pub fn duration_label(&self) -> String {
+        if let Some(value) = self
+            .duration_text
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            return value.to_string();
+        }
         if self.milestone {
             "0 days".to_string()
         } else {
-            format!("{} days", self.duration_days())
+            let days = self.duration_days();
+            if days == 1 {
+                "1 day".to_string()
+            } else {
+                format!("{days} days")
+            }
         }
     }
 }
 
 fn parse_date(value: &str) -> NaiveDate {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("valid sample date")
+}
+
+fn working_days_inclusive(start: NaiveDate, finish: NaiveDate) -> i64 {
+    use chrono::Datelike;
+
+    let mut days = 0;
+    let mut date = start;
+    while date <= finish {
+        if matches!(date.weekday().number_from_monday(), 1..=5) {
+            days += 1;
+        }
+        date += chrono::Duration::days(1);
+    }
+    days
 }

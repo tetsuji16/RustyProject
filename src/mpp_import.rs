@@ -35,7 +35,7 @@ impl MppBridge {
         let bridge_source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("java_mpp_bridge/src/com/projectlibre/mppbridge/MppImporter.java");
 
-        if !bridge_class.exists() {
+        if bridge_needs_rebuild(&bridge_class, &bridge_source) {
             ensure_dir(&cache_dir)?;
             ensure_dir(&classes_dir)?;
 
@@ -98,9 +98,26 @@ impl MppBridge {
 
         let payload = String::from_utf8(output.stdout)
             .map_err(|err| format!("Invalid MPP importer UTF-8 output: {err}"))?;
+        let payload = payload
+            .find('{')
+            .map(|start| payload[start..].to_string())
+            .ok_or_else(|| "MPP importer output did not contain JSON".to_string())?;
         let document: MppDocument =
             serde_json::from_str(&payload).map_err(|err| format!("Parse MPP JSON: {err}"))?;
         Ok(document.into_snapshot())
+    }
+}
+
+fn bridge_needs_rebuild(class_file: &Path, source_file: &Path) -> bool {
+    if !class_file.exists() {
+        return true;
+    }
+
+    let class_modified = class_file.metadata().and_then(|meta| meta.modified()).ok();
+    let source_modified = source_file.metadata().and_then(|meta| meta.modified()).ok();
+    match (class_modified, source_modified) {
+        (Some(class_modified), Some(source_modified)) => source_modified > class_modified,
+        _ => true,
     }
 }
 
@@ -213,6 +230,14 @@ struct MppTask {
     summary: bool,
     milestone: bool,
     predecessors: Vec<usize>,
+    #[serde(default)]
+    resource_names: Vec<String>,
+    #[serde(default)]
+    start_text: Option<String>,
+    #[serde(default)]
+    finish_text: Option<String>,
+    #[serde(default)]
+    duration_text: Option<String>,
 }
 
 impl MppDocument {
@@ -230,6 +255,10 @@ impl MppDocument {
                 summary: task.summary,
                 milestone: task.milestone,
                 predecessors: task.predecessors,
+                resource_names: task.resource_names,
+                start_text: task.start_text,
+                finish_text: task.finish_text,
+                duration_text: task.duration_text,
             })
             .collect();
 
@@ -243,4 +272,31 @@ impl MppDocument {
 
 fn parse_date(value: &str) -> NaiveDate {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("helper emits valid dates")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn imports_sample_mpp_from_env_path() {
+        let Ok(path) = std::env::var("RUSTYPROJECT_SAMPLE_MPP") else {
+            eprintln!("Skipping sample MPP import test: RUSTYPROJECT_SAMPLE_MPP is not set");
+            return;
+        };
+
+        let snapshot = load_mpp(path).expect("sample MPP should import");
+        assert!(
+            !snapshot.tasks.is_empty(),
+            "sample MPP should contain tasks"
+        );
+        assert!(snapshot.start_date <= snapshot.end_date);
+        assert!(
+            snapshot
+                .tasks
+                .iter()
+                .any(|task| !task.name.trim().is_empty()),
+            "sample MPP should contain named tasks"
+        );
+    }
 }

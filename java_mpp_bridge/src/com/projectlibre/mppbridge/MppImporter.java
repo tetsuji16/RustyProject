@@ -3,8 +3,10 @@ package com.projectlibre.mppbridge;
 import java.io.File;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.mpxj.ProjectFile;
 import org.mpxj.Relation;
@@ -51,6 +53,12 @@ public final class MppImporter {
             json.append(',');
             appendField(json, "finish", formatOrDefault(dateValue(task.getFinish(), task.getEarlyFinish())));
             json.append(',');
+            appendOptionalField(json, "start_text", task.getStartText());
+            json.append(',');
+            appendOptionalField(json, "finish_text", task.getFinishText());
+            json.append(',');
+            appendOptionalField(json, "duration_text", durationText(task));
+            json.append(',');
             appendField(json, "progress", String.valueOf(progress(task)));
             json.append(',');
             appendField(json, "indent", String.valueOf(Math.max(0, outlineLevel(task) - 1)));
@@ -73,6 +81,8 @@ public final class MppImporter {
                 json.append(pred.getUniqueID().intValue());
             }
             json.append(']');
+            json.append(',');
+            appendResourceNames(json, task);
             json.append('}');
         }
 
@@ -180,5 +190,96 @@ public final class MppImporter {
 
     private static void appendField(StringBuilder json, String key, String value) {
         json.append('"').append(key).append('"').append(':').append(value);
+    }
+
+    private static void appendOptionalField(StringBuilder json, String key, String value) {
+        json.append('"').append(key).append('"').append(':');
+        if (value == null) {
+            json.append("null");
+        } else {
+            json.append(quote(value));
+        }
+    }
+
+    private static String durationText(Task task) {
+        String text = task.getDurationText();
+        if (hasText(text)) {
+            return text;
+        }
+        Object duration = task.getDuration();
+        if (duration != null) {
+            return String.valueOf(duration);
+        }
+        return null;
+    }
+
+    private static void appendResourceNames(StringBuilder json, Task task) {
+        json.append("\"resource_names\":[");
+        Set<String> names = new LinkedHashSet<>();
+        try {
+            Object assignments = task.getClass().getMethod("getResourceAssignments").invoke(task);
+            if (assignments instanceof Iterable<?>) {
+                for (Object assignment : (Iterable<?>) assignments) {
+                    String name = resourceName(assignment);
+                    if (hasText(name)) {
+                        names.add(name);
+                    }
+                }
+            }
+        } catch (ReflectiveOperationException ignored) {
+            String value = tryInvokeString(task, "getResourceNames");
+            if (hasText(value)) {
+                names.add(value);
+            }
+        }
+
+        boolean first = true;
+        for (String name : names) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            appendValue(json, quote(name));
+        }
+        json.append(']');
+    }
+
+    private static String resourceName(Object assignment) {
+        String name = tryInvokeString(assignment, "getResourceName");
+        if (hasText(name)) {
+            return name;
+        }
+        try {
+            Object resource = assignment.getClass().getMethod("getResource").invoke(assignment);
+            if (resource != null) {
+                name = tryInvokeString(resource, "getName");
+                if (hasText(name)) {
+                    return name;
+                }
+                name = tryInvokeString(resource, "getResourceName");
+                if (hasText(name)) {
+                    return name;
+                }
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+        return null;
+    }
+
+    private static String tryInvokeString(Object target, String methodName) {
+        try {
+            Object value = target.getClass().getMethod(methodName).invoke(target);
+            return value == null ? null : String.valueOf(value);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static void appendValue(StringBuilder json, String value) {
+        json.append(value);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }
