@@ -19,5 +19,5 @@ If no argument is passed, the app opens the bundled sample project by default.
 
 ## Screenshot
 
-![ProjectLibre Gantt - Rust](artifacts/desktop_capture_final.png)
+![ProjectLibre Gantt - Rust](artifacts/readme_screenshot_clean.png)
 
