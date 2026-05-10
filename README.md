@@ -25,9 +25,9 @@ If no argument is passed, the app opens the bundled sample project by default.
 
 Latest Resource tab verification:
 
-![ProjectLibre Resource Ribbon](resource-window-final.png)
+![ProjectLibre Resource Ribbon](artifacts/ribbon-parity/resource-window-final-clean.png)
 
 Latest View tab verification:
 
-![ProjectLibre View Ribbon](view-window-final.png)
+![ProjectLibre View Ribbon](artifacts/ribbon-parity/view-window-final-clean.png)
 
