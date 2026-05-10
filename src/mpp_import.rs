@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::model::{ProjectSnapshot, TaskSnapshot};
+use crate::model::{DependencyLink, ProjectSnapshot, TaskSnapshot};
 
 const MPXJ_ZIP_URL: &str =
     "https://downloads.sourceforge.net/project/mpxj/mpxj/Version%2016.1.0/mpxj-16.1.0.zip";
@@ -229,7 +229,7 @@ struct MppTask {
     indent: usize,
     summary: bool,
     milestone: bool,
-    predecessors: Vec<usize>,
+    predecessors: Vec<DependencyLink>,
     #[serde(default)]
     resource_names: Vec<String>,
     #[serde(default)]
@@ -271,6 +271,7 @@ impl MppDocument {
         ProjectSnapshot {
             start_date: parse_date(&self.start_date),
             end_date: parse_date(&self.end_date),
+            status_date: None,
             tasks,
         }
     }

@@ -1,6 +1,6 @@
 use chrono::{Datelike, Duration};
 
-use crate::model::{EditCommand, ProjectSnapshot, TaskSnapshot};
+use crate::model::{DependencyRelation, EditCommand, ProjectSnapshot, TaskSnapshot};
 
 pub fn normalize_calendar(tasks: &mut [TaskSnapshot]) {
     for task in tasks.iter_mut() {
@@ -110,21 +110,54 @@ fn enforce_dependency_constraints(snapshot: &mut ProjectSnapshot) {
             continue;
         }
 
-        let mut min_start = snapshot.tasks[index].start;
+        let mut required_start = snapshot.tasks[index].start;
+        let mut required_finish = snapshot.tasks[index].finish;
         for predecessor in snapshot.tasks[index].predecessors.clone() {
-            if let Some(pred_index) = snapshot.task_index(predecessor) {
-                let pred_finish =
-                    next_working_day(snapshot.tasks[pred_index].finish + Duration::days(1));
-                if pred_finish > min_start {
-                    min_start = pred_finish;
+            if let Some(pred_index) = snapshot.task_index(predecessor.predecessor) {
+                let pred = &snapshot.tasks[pred_index];
+                let lag_days = lag_days(predecessor.lag);
+                match predecessor.relation {
+                    DependencyRelation::Fs => {
+                        let candidate =
+                            next_working_day(pred.finish + Duration::days(1 + lag_days));
+                        if candidate > required_start {
+                            required_start = candidate;
+                        }
+                    }
+                    DependencyRelation::Ss => {
+                        let candidate = next_working_day(pred.start + Duration::days(lag_days));
+                        if candidate > required_start {
+                            required_start = candidate;
+                        }
+                    }
+                    DependencyRelation::Ff => {
+                        let candidate = next_working_day(pred.finish + Duration::days(lag_days));
+                        if candidate > required_finish {
+                            required_finish = candidate;
+                        }
+                    }
+                    DependencyRelation::Sf => {
+                        let candidate = next_working_day(pred.start + Duration::days(lag_days));
+                        if candidate > required_finish {
+                            required_finish = candidate;
+                        }
+                    }
                 }
             }
         }
 
-        if snapshot.tasks[index].start < min_start {
-            let duration = snapshot.tasks[index].duration_days().max(1) - 1;
-            snapshot.tasks[index].start = min_start;
-            snapshot.tasks[index].finish = add_working_days(min_start, duration);
+        let duration = snapshot.tasks[index].duration_days().max(1) - 1;
+        let mut target_start = snapshot.tasks[index].start;
+        if required_start > target_start {
+            target_start = required_start;
+        }
+        if required_finish > snapshot.tasks[index].finish {
+            target_start = target_start.max(subtract_working_days(required_finish, duration));
+        }
+
+        if target_start > snapshot.tasks[index].start {
+            snapshot.tasks[index].start = target_start;
+            snapshot.tasks[index].finish = add_working_days(target_start, duration);
             if snapshot.tasks[index].milestone {
                 snapshot.tasks[index].finish = snapshot.tasks[index].start;
             }
@@ -154,10 +187,29 @@ fn add_working_days(mut date: chrono::NaiveDate, days: i64) -> chrono::NaiveDate
     next_working_day(date)
 }
 
+fn subtract_working_days(mut date: chrono::NaiveDate, days: i64) -> chrono::NaiveDate {
+    let mut remaining = days;
+    while remaining > 0 {
+        date -= Duration::days(1);
+        if is_working_day(date) {
+            remaining -= 1;
+        }
+    }
+    while !is_working_day(date) {
+        date -= Duration::days(1);
+    }
+    date
+}
+
+fn lag_days(lag: i64) -> i64 {
+    const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1_000;
+    lag / MILLIS_PER_DAY
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ProjectSnapshot, TaskSnapshot};
+    use crate::model::{DependencyLink, ProjectSnapshot, TaskSnapshot};
 
     fn date(value: &str) -> chrono::NaiveDate {
         chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
@@ -253,7 +305,7 @@ mod tests {
                 indent: 0,
                 summary: false,
                 milestone: false,
-                predecessors: vec![1],
+                predecessors: vec![DependencyLink::fs(1)],
                 resource_names: vec![],
                 start_text: None,
                 finish_text: None,
@@ -329,7 +381,7 @@ mod tests {
                 indent: 0,
                 summary: false,
                 milestone: false,
-                predecessors: vec![1],
+                predecessors: vec![DependencyLink::fs(1)],
                 resource_names: vec![],
                 start_text: None,
                 finish_text: None,

@@ -1,14 +1,12 @@
 use std::collections::HashSet;
 
 use chrono::NaiveDate;
-use eframe::egui::{pos2, vec2, Color32, Painter, Rect, Stroke};
+use eframe::egui::{pos2, vec2, Color32, Painter, Pos2, Rect, Stroke};
 
 use crate::model::{ProjectSnapshot, TaskSnapshot};
 use crate::ui::{gantt_chart, icons::ProjectLibreIcons, task_table};
 
 pub const HEADER_H: f32 = 30.0;
-pub const MONTH_H: f32 = 28.0;
-pub const DAY_H: f32 = 26.0;
 pub const ROW_H: f32 = 19.0;
 pub const SPLITTER_W: f32 = 6.0;
 pub const CHART_MARGIN_X: f32 = 10.0;
@@ -18,6 +16,17 @@ pub const LEFT_TABLE_W: f32 = task_table::DEFAULT_TABLE_W;
 #[derive(Clone, Copy)]
 pub struct VisibleTaskRow {
     pub task_index: usize,
+}
+
+#[derive(Clone, Copy)]
+pub struct DragPreview {
+    pub task_index: usize,
+    pub task_id: usize,
+    pub action: gantt_chart::DragAction,
+    pub origin_pointer: Pos2,
+    pub current_pointer: Pos2,
+    pub original_start: NaiveDate,
+    pub original_finish: NaiveDate,
 }
 
 pub struct TimelineGeometry {
@@ -110,12 +119,14 @@ pub fn draw_workspace(
     painter: &Painter,
     rect: Rect,
     chart: &TimelineGeometry,
+    status_date: Option<chrono::NaiveDate>,
     tasks: &[TaskSnapshot],
     visible_rows: &[VisibleTaskRow],
     selected_task_id: usize,
     collapsed_summaries: &HashSet<usize>,
     left_table_width: f32,
     icons: &ProjectLibreIcons,
+    drag_preview: Option<&DragPreview>,
 ) {
     let left_rect = Rect::from_min_max(
         rect.min,
@@ -161,7 +172,81 @@ pub fn draw_workspace(
         tasks,
         visible_rows,
         selected_task_id,
+        status_date,
     );
     gantt_chart::draw_dependency_links(painter, chart, tasks, visible_rows);
     gantt_chart::draw_task_bars(painter, chart, tasks, visible_rows, selected_task_id);
+    if let Some(drag_preview) = drag_preview {
+        gantt_chart::draw_drag_preview(painter, chart, tasks, visible_rows, drag_preview);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use std::collections::HashSet;
+
+    #[test]
+    fn collapsed_summary_hides_descendants_until_the_outline_returns_to_the_same_level() {
+        let tasks = vec![
+            TaskSnapshot {
+                number: 1,
+                name: "Root".to_string(),
+                start: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+                finish: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+                progress: 0.0,
+                indent: 0,
+                summary: true,
+                milestone: false,
+                predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
+                notes: None,
+                deadline: None,
+            },
+            TaskSnapshot {
+                number: 2,
+                name: "Child".to_string(),
+                start: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+                finish: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+                progress: 0.0,
+                indent: 1,
+                summary: false,
+                milestone: false,
+                predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
+                notes: None,
+                deadline: None,
+            },
+            TaskSnapshot {
+                number: 3,
+                name: "Sibling".to_string(),
+                start: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+                finish: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+                progress: 0.0,
+                indent: 0,
+                summary: false,
+                milestone: false,
+                predecessors: vec![],
+                resource_names: vec![],
+                start_text: None,
+                finish_text: None,
+                duration_text: None,
+                notes: None,
+                deadline: None,
+            },
+        ];
+
+        let visible = build_visible_rows(&tasks, &HashSet::from([1]));
+        assert_eq!(
+            visible.iter().map(|row| row.task_index).collect::<Vec<_>>(),
+            vec![0, 2]
+        );
+    }
 }

@@ -1,5 +1,5 @@
-use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use chrono::{Datelike, NaiveDate};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::schedule;
 
@@ -28,6 +28,8 @@ pub enum EditCommand {
 pub struct ProjectSnapshot {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
+    #[serde(default)]
+    pub status_date: Option<NaiveDate>,
     pub tasks: Vec<TaskSnapshot>,
 }
 
@@ -41,7 +43,8 @@ pub struct TaskSnapshot {
     pub indent: usize,
     pub summary: bool,
     pub milestone: bool,
-    pub predecessors: Vec<usize>,
+    #[serde(default)]
+    pub predecessors: Vec<DependencyLink>,
     #[serde(default)]
     pub resource_names: Vec<String>,
     #[serde(default)]
@@ -56,13 +59,132 @@ pub struct TaskSnapshot {
     pub deadline: Option<NaiveDate>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DependencyRelation {
+    #[serde(rename = "FF")]
+    Ff,
+    #[serde(rename = "FS")]
+    Fs,
+    #[serde(rename = "SF")]
+    Sf,
+    #[serde(rename = "SS")]
+    Ss,
+}
+
+impl Default for DependencyRelation {
+    fn default() -> Self {
+        Self::Fs
+    }
+}
+
+impl DependencyRelation {
+    pub fn as_code(self) -> &'static str {
+        match self {
+            Self::Ff => "FF",
+            Self::Fs => "FS",
+            Self::Sf => "SF",
+            Self::Ss => "SS",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DependencyLink {
+    pub predecessor: usize,
+    pub relation: DependencyRelation,
+    pub lag: i64,
+}
+
+impl DependencyLink {
+    pub fn fs(predecessor: usize) -> Self {
+        Self {
+            predecessor,
+            relation: DependencyRelation::Fs,
+            lag: 0,
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.relation == DependencyRelation::Fs && self.lag == 0
+    }
+
+    pub fn display_text(&self) -> String {
+        let mut out = self.predecessor.to_string();
+        if self.relation != DependencyRelation::Fs || self.lag != 0 {
+            out.push_str(self.relation.as_code());
+            if self.lag != 0 {
+                out.push_str(&format_dependency_lag(self.lag));
+            }
+        }
+        out
+    }
+}
+
+impl Serialize for DependencyLink {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.is_default() {
+            serializer.serialize_u64(self.predecessor as u64)
+        } else {
+            #[derive(Serialize)]
+            struct DependencyLinkSerde {
+                predecessor: usize,
+                relation: DependencyRelation,
+                lag: i64,
+            }
+
+            DependencyLinkSerde {
+                predecessor: self.predecessor,
+                relation: self.relation,
+                lag: self.lag,
+            }
+            .serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DependencyLink {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum DependencyLinkRepr {
+            Id(usize),
+            Link {
+                predecessor: usize,
+                #[serde(default)]
+                relation: Option<DependencyRelation>,
+                #[serde(default)]
+                lag: Option<i64>,
+            },
+        }
+
+        match DependencyLinkRepr::deserialize(deserializer)? {
+            DependencyLinkRepr::Id(predecessor) => Ok(DependencyLink::fs(predecessor)),
+            DependencyLinkRepr::Link {
+                predecessor,
+                relation,
+                lag,
+            } => Ok(DependencyLink {
+                predecessor,
+                relation: relation.unwrap_or_default(),
+                lag: lag.unwrap_or(0),
+            }),
+        }
+    }
+}
+
 impl ProjectSnapshot {
     pub fn sample() -> Self {
         let mut tasks = Vec::new();
 
         macro_rules! task {
             ($id:expr, $name:expr, $start:expr, $finish:expr, $progress:expr, $indent:expr, $summary:expr, $milestone:expr $(, $pred:expr)*) => {{
-                let predecessors = vec![$($pred),*];
+                let predecessors = vec![$(DependencyLink::fs($pred)),*];
                 tasks.push(TaskSnapshot {
                     number: $id,
                     name: $name.to_string(),
@@ -423,6 +545,7 @@ impl ProjectSnapshot {
         let mut snapshot = Self {
             start_date: parse_date("2025-01-01"),
             end_date: parse_date("2025-01-01"),
+            status_date: None,
             tasks,
         };
         snapshot.refresh_bounds();
@@ -513,7 +636,16 @@ impl TaskSnapshot {
             .as_deref()
             .filter(|value| !value.trim().is_empty())
             .map(|value| value.to_string())
-            .unwrap_or_else(|| format!("{} 8:00", self.start.format("%Y/%m/%d")))
+            .unwrap_or_else(|| {
+                let day_abbr = self.start.format("%a").to_string();
+                format!(
+                    "{} {:02}/{:02}/{:02} 8:00",
+                    day_abbr,
+                    self.start.month(),
+                    self.start.day(),
+                    self.start.year() % 100
+                )
+            })
     }
 
     pub fn finish_label(&self) -> String {
@@ -521,7 +653,16 @@ impl TaskSnapshot {
             .as_deref()
             .filter(|value| !value.trim().is_empty())
             .map(|value| value.to_string())
-            .unwrap_or_else(|| format!("{} 17:00", self.finish.format("%Y/%m/%d")))
+            .unwrap_or_else(|| {
+                let day_abbr = self.finish.format("%a").to_string();
+                format!(
+                    "{} {:02}/{:02}/{:02} 17:00",
+                    day_abbr,
+                    self.finish.month(),
+                    self.finish.day(),
+                    self.finish.year() % 100
+                )
+            })
     }
 
     pub fn duration_days(&self) -> i64 {
@@ -556,6 +697,15 @@ impl TaskSnapshot {
         self.resource_names.join(", ")
     }
 
+    pub fn predecessors_label(&self) -> String {
+        self.predecessors
+            .iter()
+            .filter(|link| !link.is_default())
+            .map(|link| link.display_text())
+            .collect::<Vec<_>>()
+            .join(";")
+    }
+
     pub fn has_notes(&self) -> bool {
         self.notes
             .as_deref()
@@ -575,8 +725,6 @@ fn parse_date(value: &str) -> NaiveDate {
 }
 
 fn working_days_inclusive(start: NaiveDate, finish: NaiveDate) -> i64 {
-    use chrono::Datelike;
-
     let mut days = 0;
     let mut date = start;
     while date <= finish {
@@ -586,4 +734,149 @@ fn working_days_inclusive(start: NaiveDate, finish: NaiveDate) -> i64 {
         date += chrono::Duration::days(1);
     }
     days
+}
+
+fn format_dependency_lag(lag: i64) -> String {
+    const MILLIS_PER_SECOND: i64 = 1_000;
+    const MILLIS_PER_MINUTE: i64 = 60 * MILLIS_PER_SECOND;
+    const MILLIS_PER_HOUR: i64 = 60 * MILLIS_PER_MINUTE;
+    const MILLIS_PER_DAY: i64 = 24 * MILLIS_PER_HOUR;
+
+    let sign = if lag > 0 {
+        "+"
+    } else if lag < 0 {
+        "-"
+    } else {
+        ""
+    };
+    let abs = lag.abs();
+    if abs % MILLIS_PER_DAY == 0 {
+        format!("{sign}{}d", abs / MILLIS_PER_DAY)
+    } else if abs % MILLIS_PER_HOUR == 0 {
+        format!("{sign}{}h", abs / MILLIS_PER_HOUR)
+    } else if abs % MILLIS_PER_MINUTE == 0 {
+        format!("{sign}{}m", abs / MILLIS_PER_MINUTE)
+    } else if abs % MILLIS_PER_SECOND == 0 {
+        format!("{sign}{}s", abs / MILLIS_PER_SECOND)
+    } else {
+        format!("{sign}{}ms", abs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn date(value: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("valid test date")
+    }
+
+    #[test]
+    fn label_fallbacks_match_expected_projectlibre_shape() {
+        let task = TaskSnapshot {
+            number: 1,
+            name: "Task".to_string(),
+            start: date("2025-02-03"),
+            finish: date("2025-02-07"),
+            progress: 0.5,
+            indent: 0,
+            summary: false,
+            milestone: false,
+            predecessors: vec![],
+            resource_names: vec!["Alice".to_string(), "Bob".to_string()],
+            start_text: None,
+            finish_text: None,
+            duration_text: None,
+            notes: None,
+            deadline: None,
+        };
+
+        assert_eq!(task.start_label(), "Mon 02/03/25 8:00");
+        assert_eq!(task.finish_label(), "Fri 02/07/25 17:00");
+        assert_eq!(task.duration_label(), "5 days");
+        assert_eq!(task.resource_names_label(), "Alice, Bob");
+    }
+
+    #[test]
+    fn predecessors_label_uses_java_style_relation_suffixes() {
+        let task = TaskSnapshot {
+            number: 3,
+            name: "Task".to_string(),
+            start: date("2025-02-03"),
+            finish: date("2025-02-04"),
+            progress: 0.0,
+            indent: 0,
+            summary: false,
+            milestone: false,
+            predecessors: vec![
+                DependencyLink::fs(10),
+                DependencyLink {
+                    predecessor: 11,
+                    relation: DependencyRelation::Ff,
+                    lag: 24 * 60 * 60 * 1000,
+                },
+            ],
+            resource_names: vec![],
+            start_text: None,
+            finish_text: None,
+            duration_text: None,
+            notes: None,
+            deadline: None,
+        };
+
+        assert_eq!(task.predecessors_label(), "11FF+1d");
+    }
+
+    #[test]
+    fn dependency_links_still_accept_legacy_integer_json() {
+        let task: TaskSnapshot = serde_json::from_str(
+            r#"{
+                "number": 1,
+                "name": "Task",
+                "start": "2025-02-03",
+                "finish": "2025-02-04",
+                "progress": 0.0,
+                "indent": 0,
+                "summary": false,
+                "milestone": false,
+                "predecessors": [34]
+            }"#,
+        )
+        .expect("legacy predecessor json should deserialize");
+
+        assert_eq!(task.predecessors.len(), 1);
+        assert_eq!(task.predecessors[0].predecessor, 34);
+        assert_eq!(task.predecessors[0].relation, DependencyRelation::Fs);
+        assert_eq!(task.predecessors[0].lag, 0);
+    }
+
+    #[test]
+    fn task_flags_follow_basic_rules() {
+        let mut task = TaskSnapshot {
+            number: 2,
+            name: "Task".to_string(),
+            start: date("2025-02-03"),
+            finish: date("2025-02-04"),
+            progress: 1.0,
+            indent: 0,
+            summary: false,
+            milestone: false,
+            predecessors: vec![],
+            resource_names: vec![],
+            start_text: None,
+            finish_text: None,
+            duration_text: None,
+            notes: Some("note".to_string()),
+            deadline: Some(date("2025-02-03")),
+        };
+
+        assert!(task.has_notes());
+        assert!(task.missed_deadline());
+
+        task.notes = Some("   ".to_string());
+        task.deadline = Some(date("2025-02-10"));
+        assert!(!task.has_notes());
+        assert!(!task.missed_deadline());
+    }
 }

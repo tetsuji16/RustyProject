@@ -5,16 +5,17 @@ use eframe::egui::{
     pos2, vec2, Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Shape, Stroke,
 };
 
-use crate::model::TaskSnapshot;
-use crate::ui::gantt_view::{TimelineGeometry, VisibleTaskRow, DAY_H, HEADER_H, MONTH_H, ROW_H};
+use crate::model::{DependencyRelation, TaskSnapshot};
+use crate::ui::gantt_view::{DragPreview, TimelineGeometry, VisibleTaskRow, HEADER_H, ROW_H};
 
 const BAR_H: f32 = 11.0;
-const MILESTONE_SIZE: f32 = 11.0; // Same height as regular bars
+const MILESTONE_SIZE: f32 = 11.0;
+const BAR_Y_OFFSET: f32 = 4.0;
 const BAR_HANDLE_W: f32 = 7.0;
 const BAR_HIT_PAD: f32 = 4.0;
 const BAR_LABEL_PAD: f32 = 7.0;
+const BAR_MIN_W: f32 = 0.0;
 
-// Progress bar constants
 const PROGRESS_BAR_H: f32 = 4.0;
 const ANNOTATION_X_OFFSET: f32 = 12.0;
 const ANNOTATION_Y_OFFSET: f32 = 1.0;
@@ -38,70 +39,82 @@ pub fn draw_timeline_headers(painter: &Painter, rect: Rect, chart: &TimelineGeom
     let border = Color32::from_rgb(175, 175, 175);
     let header_rect = Rect::from_min_size(rect.min, vec2(rect.width(), HEADER_H));
     painter.rect_filled(header_rect, 0.0, Color32::from_rgb(238, 238, 238));
+    let top_y = rect.top();
+    let mid_y = rect.top() + HEADER_H * 0.5;
+    let bottom_y = rect.bottom();
+    let text_color = Color32::from_rgb(34, 34, 34);
+
     painter.line_segment(
-        [
-            pos2(rect.left(), header_rect.bottom()),
-            pos2(rect.right(), header_rect.bottom()),
-        ],
+        [pos2(rect.left(), top_y), pos2(rect.right(), top_y)],
         Stroke::new(1.0, border),
     );
-
-    for (label, start, end) in month_spans(chart.start_date, chart.end_date) {
-        let x0 = chart.date_to_x(start).max(rect.left());
-        let x1 = chart.date_to_x(end + Duration::days(1)).min(rect.right());
-        if x1 <= rect.left() || x0 >= rect.right() {
-            continue;
-        }
-
-        let month_rect = Rect::from_min_max(pos2(x0, rect.top()), pos2(x1, rect.top() + MONTH_H));
-        painter.rect_stroke(
-            month_rect,
-            0.0,
-            Stroke::new(1.0, border),
-            eframe::egui::StrokeKind::Outside,
-        );
-        painter.text(
-            month_rect.center(),
-            Align2::CENTER_CENTER,
-            label,
-            FontId::new(15.0, FontFamily::Proportional),
-            Color32::from_rgb(45, 45, 45),
-        );
-    }
-
-    let days_top = rect.top() + MONTH_H;
-    let days_rect = Rect::from_min_max(
-        pos2(rect.left(), days_top),
-        pos2(
-            chart.date_to_x(chart.end_date + Duration::days(1)),
-            rect.top() + HEADER_H,
-        ),
-    );
-    painter.rect_stroke(
-        days_rect,
-        0.0,
+    painter.line_segment(
+        [pos2(rect.left(), mid_y), pos2(rect.right(), mid_y)],
         Stroke::new(1.0, border),
-        eframe::egui::StrokeKind::Outside,
+    );
+    painter.line_segment(
+        [pos2(rect.left(), bottom_y), pos2(rect.right(), bottom_y)],
+        Stroke::new(1.0, border),
     );
 
     let mut day = chart.start_date;
+    let mut last_month_key = None;
     while day <= chart.end_date {
-        let x = chart.date_to_x(day);
+        let day_start_x = chart.date_to_x(day);
+        let next_day = day + Duration::days(1);
+        let day_end_x = chart.date_to_x(next_day);
         let is_weekend = matches!(day.weekday().number_from_monday(), 6 | 7);
-        let stroke = if is_weekend {
+        let day_stroke = if is_weekend {
             Stroke::new(1.0, Color32::from_rgb(210, 210, 210))
         } else {
             Stroke::new(1.0, Color32::from_rgb(226, 226, 226))
         };
-        painter.line_segment([pos2(x, rect.top()), pos2(x, rect.bottom())], stroke);
-        painter.text(
-            pos2(x + chart.day_width * 0.5, days_top + DAY_H * 0.5),
-            Align2::CENTER_CENTER,
-            format!("{:02}", day.day()),
-            FontId::new(14.0, FontFamily::Proportional),
-            Color32::from_rgb(34, 34, 34),
+
+        painter.line_segment(
+            [pos2(day_start_x, mid_y), pos2(day_start_x, bottom_y)],
+            day_stroke,
         );
-        day += Duration::days(1);
+        painter.line_segment(
+            [pos2(day_end_x, mid_y), pos2(day_end_x, bottom_y)],
+            day_stroke,
+        );
+        painter.text(
+            pos2(day_start_x + 2.0, mid_y + 1.0),
+            Align2::LEFT_TOP,
+            format!("{:02}", day.day()),
+            FontId::new(13.0, FontFamily::Proportional),
+            text_color,
+        );
+
+        let month_key = (day.year(), day.month());
+        if last_month_key != Some(month_key) {
+            painter.line_segment(
+                [pos2(day_start_x, top_y), pos2(day_start_x, mid_y)],
+                Stroke::new(1.0, border),
+            );
+            let mut month_end = day;
+            while month_end < chart.end_date
+                && (month_end + Duration::days(1)).month() == day.month()
+            {
+                month_end += Duration::days(1);
+            }
+            let month_end = month_end + Duration::days(1);
+            let month_end_x = chart.date_to_x(month_end);
+            painter.line_segment(
+                [pos2(month_end_x, top_y), pos2(month_end_x, mid_y)],
+                Stroke::new(1.0, border),
+            );
+            painter.text(
+                pos2(day_start_x + 2.0, top_y + 1.0),
+                Align2::LEFT_TOP,
+                format!("{} {}", month_label(day.month()), day.year()),
+                FontId::new(13.0, FontFamily::Proportional),
+                text_color,
+            );
+            last_month_key = Some(month_key);
+        }
+
+        day = next_day;
     }
 }
 
@@ -112,11 +125,13 @@ pub fn draw_rows_and_grid(
     tasks: &[TaskSnapshot],
     visible_rows: &[VisibleTaskRow],
     selected_task_id: usize,
+    status_date: Option<NaiveDate>,
 ) {
-    let painter = painter.with_clip_rect(rect);
+    let data_rect = Rect::from_min_max(pos2(rect.left(), rect.top() + HEADER_H), rect.max);
+    let painter = painter.with_clip_rect(data_rect);
     let line = Color32::from_rgb(224, 224, 224);
 
-    painter.rect_filled(rect, 0.0, Color32::from_rgb(250, 250, 250));
+    painter.rect_filled(data_rect, 0.0, Color32::from_rgb(250, 250, 250));
 
     let mut day = chart.start_date;
     while day <= chart.end_date {
@@ -124,8 +139,8 @@ pub fn draw_rows_and_grid(
         let weekday = day.weekday().number_from_monday();
         if weekday >= 6 {
             let weekend_rect = Rect::from_min_size(
-                pos2(x, rect.top() + HEADER_H),
-                vec2(chart.day_width, rect.height() - HEADER_H),
+                pos2(x, data_rect.top()),
+                vec2(chart.day_width, data_rect.height()),
             );
             painter.rect_filled(weekend_rect, 0.0, Color32::from_rgb(244, 244, 244));
         }
@@ -135,7 +150,10 @@ pub fn draw_rows_and_grid(
         } else {
             Stroke::new(1.0, Color32::from_rgb(232, 232, 232))
         };
-        painter.line_segment([pos2(x, rect.top()), pos2(x, rect.bottom())], stroke);
+        painter.line_segment(
+            [pos2(x, data_rect.top()), pos2(x, data_rect.bottom())],
+            stroke,
+        );
         day += Duration::days(1);
     }
 
@@ -144,17 +162,20 @@ pub fn draw_rows_and_grid(
         let y = chart.row_top(row_index);
         if task.number == selected_task_id {
             painter.rect_filled(
-                Rect::from_min_size(pos2(rect.left(), y), vec2(rect.width(), ROW_H)),
+                Rect::from_min_size(pos2(data_rect.left(), y), vec2(data_rect.width(), ROW_H)),
                 0.0,
                 Color32::from_rgba_premultiplied(90, 120, 150, 28),
             );
         }
         painter.line_segment(
-            [pos2(rect.left(), y), pos2(rect.right(), y)],
+            [pos2(data_rect.left(), y), pos2(data_rect.right(), y)],
             Stroke::new(1.0, line),
         );
         painter.line_segment(
-            [pos2(rect.left(), y + ROW_H), pos2(rect.right(), y + ROW_H)],
+            [
+                pos2(data_rect.left(), y + ROW_H),
+                pos2(data_rect.right(), y + ROW_H),
+            ],
             Stroke::new(1.0, line),
         );
     }
@@ -162,11 +183,22 @@ pub fn draw_rows_and_grid(
     let project_start_x = chart.date_to_x(chart.start_date);
     painter.line_segment(
         [
-            pos2(project_start_x, rect.top() + HEADER_H),
-            pos2(project_start_x, rect.bottom()),
+            pos2(project_start_x, data_rect.top()),
+            pos2(project_start_x, data_rect.bottom()),
         ],
         Stroke::new(1.0, Color32::from_rgb(155, 196, 155)),
     );
+
+    if let Some(status_date) = status_date {
+        let status_x = chart.date_to_x(status_date);
+        painter.line_segment(
+            [
+                pos2(status_x, data_rect.top()),
+                pos2(status_x, data_rect.bottom()),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(74, 192, 74)),
+        );
+    }
 }
 
 pub fn draw_task_bars(
@@ -178,7 +210,7 @@ pub fn draw_task_bars(
 ) {
     for (row_index, row) in visible_rows.iter().enumerate() {
         let task = &tasks[row.task_index];
-        let y_center = chart.row_top(row_index) + ROW_H * 0.5;
+        let y_center = bar_center_for_row(chart, row_index);
         if task.milestone {
             draw_milestone(
                 painter,
@@ -189,7 +221,10 @@ pub fn draw_task_bars(
                 painter,
                 chart,
                 task,
-                pos2(chart.date_to_x(task.start) + 12.0, y_center),
+                pos2(
+                    chart.date_to_x(task.start) + ANNOTATION_X_OFFSET,
+                    y_center + ANNOTATION_Y_OFFSET,
+                ),
                 task.number == selected_task_id,
                 BarAnnotation::Milestone,
             );
@@ -215,6 +250,70 @@ pub fn draw_task_bars(
     }
 }
 
+pub fn draw_drag_preview(
+    painter: &Painter,
+    chart: &TimelineGeometry,
+    tasks: &[TaskSnapshot],
+    visible_rows: &[VisibleTaskRow],
+    drag: &DragPreview,
+) {
+    let Some(row_index) = visible_rows
+        .iter()
+        .enumerate()
+        .find_map(|(row_index, row)| (row.task_index == drag.task_index).then_some(row_index))
+    else {
+        return;
+    };
+
+    let task = &tasks[drag.task_index];
+    let delta_days = chart.pixel_delta_to_days(drag.current_pointer.x - drag.origin_pointer.x);
+    let dx = delta_days as f32 * chart.day_width;
+    let y_center = bar_center_for_row(chart, row_index);
+    let shadow = Color32::from_rgba_premultiplied(180, 40, 40, 72);
+    let stroke = Stroke::new(2.0, Color32::from_rgb(170, 40, 40));
+
+    if task.milestone {
+        let center = pos2(chart.date_to_x(task.start) + dx, y_center);
+        let half = MILESTONE_SIZE * 0.5;
+        painter.add(Shape::convex_polygon(
+            vec![
+                pos2(center.x, center.y - half),
+                pos2(center.x + half, center.y),
+                pos2(center.x, center.y + half),
+                pos2(center.x - half, center.y),
+            ],
+            shadow,
+            stroke,
+        ));
+        return;
+    }
+
+    let original = task_bar_rect_for_dates_at_y(chart, task.start, task.finish, y_center);
+    let rect = match drag.action {
+        DragAction::Move => original.translate(vec2(dx, 0.0)),
+        DragAction::ResizeStart => {
+            let left = (original.left() + dx).min(original.right() - 1.0);
+            Rect::from_min_max(pos2(left, original.top()), original.right_bottom())
+        }
+        DragAction::ResizeEnd => {
+            let right = (original.right() + dx).max(original.left() + 1.0);
+            Rect::from_min_max(original.left_top(), pos2(right, original.bottom()))
+        }
+        DragAction::Progress => {
+            let progress = ((drag.current_pointer.x - original.left()) / original.width().max(1.0))
+                .clamp(0.0, 1.0);
+            let completed_w = original.width() * progress;
+            Rect::from_min_size(
+                original.left_top(),
+                vec2(completed_w.max(0.0), original.height()),
+            )
+        }
+    };
+
+    painter.rect_filled(rect, 1.0, shadow);
+    painter.rect_stroke(rect, 1.0, stroke, eframe::egui::StrokeKind::Outside);
+}
+
 pub fn hit_test_task_bar(
     chart: &TimelineGeometry,
     tasks: &[TaskSnapshot],
@@ -238,7 +337,7 @@ pub fn hit_test_task_bar(
         if task.milestone {
             let center = pos2(
                 chart.date_to_x(task.start),
-                chart.row_top(row_index) + ROW_H * 0.5,
+                bar_center_for_row(chart, row_index),
             );
             let rect = Rect::from_center_size(
                 center,
@@ -296,7 +395,7 @@ pub fn task_bar_rect_for_dates_at_y(
     let x1 = chart.date_to_x(finish + Duration::days(1));
     Rect::from_min_max(
         pos2(x0, y_center - BAR_H * 0.5),
-        pos2(x1.max(x0 + 7.0), y_center + BAR_H * 0.5),
+        pos2(x1.max(x0 + BAR_MIN_W), y_center + BAR_H * 0.5),
     )
 }
 
@@ -305,7 +404,7 @@ fn task_bar_rect_at_row(chart: &TimelineGeometry, row_index: usize, task: &TaskS
         chart,
         task.start,
         task.finish,
-        chart.row_top(row_index) + ROW_H * 0.5,
+        bar_center_for_row(chart, row_index),
     )
 }
 
@@ -373,22 +472,23 @@ fn draw_summary_bar(
     let x1 = chart.date_to_x(task.finish + Duration::days(1));
     let y = y_center - BAR_H * 0.5;
     let rect = Rect::from_min_max(pos2(x0, y), pos2(x1.max(x0 + 12.0), y + BAR_H));
+    let body = rect.shrink2(vec2(1.0, 1.0));
 
-    painter.rect_filled(rect, 0.0, Color32::from_rgb(38, 38, 38));
+    painter.rect_filled(body, 0.0, Color32::from_rgb(38, 38, 38));
     painter.add(Shape::convex_polygon(
         vec![
-            pos2(rect.left(), rect.bottom()),
+            pos2(rect.left(), rect.center().y),
+            pos2(rect.left() + 8.0, rect.top()),
             pos2(rect.left() + 8.0, rect.bottom()),
-            pos2(rect.left(), rect.bottom() + 8.0),
         ],
         Color32::from_rgb(38, 38, 38),
         Stroke::NONE,
     ));
     painter.add(Shape::convex_polygon(
         vec![
-            pos2(rect.right(), rect.bottom()),
+            pos2(rect.right(), rect.center().y),
+            pos2(rect.right() - 8.0, rect.top()),
             pos2(rect.right() - 8.0, rect.bottom()),
-            pos2(rect.right(), rect.bottom() + 8.0),
         ],
         Color32::from_rgb(38, 38, 38),
         Stroke::NONE,
@@ -414,6 +514,10 @@ fn draw_milestone(painter: &Painter, center: Pos2, selected: bool) {
         fill,
         Stroke::new(1.0, Color32::from_rgb(28, 28, 28)),
     ));
+}
+
+fn bar_center_for_row(chart: &TimelineGeometry, row_index: usize) -> f32 {
+    chart.row_top(row_index) + BAR_Y_OFFSET + BAR_H * 0.5
 }
 
 fn draw_bar_label(
@@ -467,10 +571,10 @@ pub fn draw_dependency_links(
         .collect();
 
     for (index, task) in tasks.iter().enumerate() {
-        for predecessor_number in &task.predecessors {
+        for link in &task.predecessors {
             let Some(from_index) = tasks
                 .iter()
-                .position(|candidate| candidate.number == *predecessor_number)
+                .position(|candidate| candidate.number == link.predecessor)
             else {
                 continue;
             };
@@ -481,22 +585,61 @@ pub fn draw_dependency_links(
                 continue;
             };
             let from = &tasks[from_index];
-            let x0 = chart.date_to_x(from.finish + Duration::days(1));
-            let y0 = chart.row_top(from_row) + ROW_H * 0.5;
-            let x1 = chart.date_to_x(task.start);
-            let y1 = chart.row_top(to_row) + ROW_H * 0.5;
-            let mid_x = (x0 + 10.0).max(x1 - 14.0);
-
+            let from_rect = task_bar_rect_for_dates_at_y(
+                chart,
+                from.start,
+                from.finish,
+                bar_center_for_row(chart, from_row),
+            );
+            let to_rect = task_bar_rect_for_dates_at_y(
+                chart,
+                task.start,
+                task.finish,
+                bar_center_for_row(chart, to_row),
+            );
+            let (x0, y0) = dependency_anchor(from_rect, link.relation, true);
+            let (x1, y1) = dependency_anchor(to_rect, link.relation, false);
             let stroke = Stroke::new(1.0, Color32::from_rgb(92, 92, 92));
-            painter.line_segment([pos2(x0, y0), pos2(mid_x, y0)], stroke);
-            painter.line_segment([pos2(mid_x, y0), pos2(mid_x, y1)], stroke);
-            painter.line_segment([pos2(mid_x, y1), pos2(x1 - 6.0, y1)], stroke);
+            let from_sign = if matches!(link.relation, DependencyRelation::Sf | DependencyRelation::Ss) {
+                -1.0
+            } else {
+                1.0
+            };
+            let to_sign = if matches!(link.relation, DependencyRelation::Fs | DependencyRelation::Ss) {
+                -1.0
+            } else {
+                1.0
+            };
+            let x2 = x0 + from_sign * 5.0;
+            let x3 = x1 + to_sign * 15.0;
+            let y2 = (y0 + y1) * 0.5;
+
+            match link.relation {
+                DependencyRelation::Fs | DependencyRelation::Sf => {
+                    if (matches!(link.relation, DependencyRelation::Fs) && x3 >= x2)
+                        || (matches!(link.relation, DependencyRelation::Sf) && x3 <= x2)
+                    {
+                        painter.line_segment([pos2(x0, y0), pos2(x3, y0)], stroke);
+                        painter.line_segment([pos2(x3, y0), pos2(x3, y1)], stroke);
+                    } else {
+                        painter.line_segment([pos2(x0, y0), pos2(x2, y0)], stroke);
+                        painter.line_segment([pos2(x2, y0), pos2(x2, y2)], stroke);
+                        painter.line_segment([pos2(x2, y2), pos2(x3, y2)], stroke);
+                        painter.line_segment([pos2(x3, y2), pos2(x3, y1)], stroke);
+                    }
+                }
+                DependencyRelation::Ss | DependencyRelation::Ff => {
+                    let x5 = if matches!(link.relation, DependencyRelation::Ss) {
+                        x2.min(x3)
+                    } else {
+                        x2.max(x3)
+                    };
+                    painter.line_segment([pos2(x0, y0), pos2(x5, y0)], stroke);
+                    painter.line_segment([pos2(x5, y0), pos2(x5, y1)], stroke);
+                }
+            }
             painter.add(Shape::convex_polygon(
-                vec![
-                    pos2(x1 - 6.0, y1 - 4.0),
-                    pos2(x1, y1),
-                    pos2(x1 - 6.0, y1 + 4.0),
-                ],
+                dependency_arrow_points(x1, y1, link.relation),
                 Color32::from_rgb(92, 92, 92),
                 Stroke::NONE,
             ));
@@ -504,30 +647,30 @@ pub fn draw_dependency_links(
     }
 }
 
-fn month_spans(start: NaiveDate, end: NaiveDate) -> Vec<(String, NaiveDate, NaiveDate)> {
-    let mut spans = Vec::new();
-    let mut cursor = start;
-    while cursor <= end {
-        let month_start = cursor;
-        let mut month_end = cursor;
-        while month_end + Duration::days(1) <= end
-            && (month_end + Duration::days(1)).month() == month_start.month()
-        {
-            month_end += Duration::days(1);
-        }
+fn dependency_anchor(rect: Rect, relation: DependencyRelation, predecessor: bool) -> (f32, f32) {
+    let center_y = rect.center().y;
+    let x = match (relation, predecessor) {
+        (DependencyRelation::Ss, true) | (DependencyRelation::Sf, true) => rect.left(),
+        (DependencyRelation::Ff, true) | (DependencyRelation::Fs, true) => rect.right(),
+        (DependencyRelation::Ss, false) | (DependencyRelation::Fs, false) => rect.left(),
+        (DependencyRelation::Ff, false) | (DependencyRelation::Sf, false) => rect.right(),
+    };
+    (x, center_y)
+}
 
-        spans.push((
-            format!(
-                "{} {}",
-                month_label(month_start.month()),
-                month_start.year()
-            ),
-            month_start,
-            month_end,
-        ));
-        cursor = month_end + Duration::days(1);
+fn dependency_arrow_points(x: f32, y: f32, relation: DependencyRelation) -> Vec<Pos2> {
+    let left = x - 6.0;
+    let right = x;
+    let top = y - 4.0;
+    let bottom = y + 4.0;
+    match relation {
+        DependencyRelation::Ss | DependencyRelation::Sf => {
+            vec![pos2(right, y), pos2(left, top), pos2(left, bottom)]
+        }
+        DependencyRelation::Ff | DependencyRelation::Fs => {
+            vec![pos2(left, top), pos2(right, y), pos2(left, bottom)]
+        }
     }
-    spans
 }
 
 fn month_label(month: u32) -> &'static str {
@@ -545,5 +688,61 @@ fn month_label(month: u32) -> &'static str {
         11 => "Nov",
         12 => "Dec",
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::ProjectSnapshot;
+
+    #[test]
+    fn bar_center_matches_java_style_offset() {
+        let snapshot = ProjectSnapshot {
+            start_date: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+            end_date: NaiveDate::from_ymd_opt(2025, 2, 4).expect("date"),
+            status_date: None,
+            tasks: vec![],
+        };
+        let chart = TimelineGeometry::new(
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)),
+            &snapshot,
+            24.0,
+            614.0,
+        );
+
+        assert_eq!(bar_center_for_row(&chart, 0), chart.row_top(0) + 9.5);
+        assert_eq!(bar_center_for_row(&chart, 4), chart.row_top(4) + 9.5);
+    }
+
+    #[test]
+    fn task_bar_rect_uses_expected_height() {
+        let snapshot = ProjectSnapshot {
+            start_date: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+            end_date: NaiveDate::from_ymd_opt(2025, 2, 4).expect("date"),
+            status_date: None,
+            tasks: vec![],
+        };
+        let chart = TimelineGeometry::new(
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)),
+            &snapshot,
+            24.0,
+            614.0,
+        );
+        let rect = task_bar_rect_for_dates_at_y(
+            &chart,
+            NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+            NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+            bar_center_for_row(&chart, 0),
+        );
+
+        assert_eq!(rect.height(), BAR_H);
+        assert_eq!(rect.center().y, bar_center_for_row(&chart, 0));
+    }
+
+    #[test]
+    fn month_label_matches_java_style_abbreviation() {
+        assert_eq!(month_label(2), "Feb");
+        assert_eq!(month_label(12), "Dec");
     }
 }

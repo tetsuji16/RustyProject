@@ -82,7 +82,13 @@ public final class MppImporter {
                     json.append(',');
                 }
                 firstPred = false;
-                json.append(pred.getUniqueID().intValue());
+                json.append('{');
+                appendField(json, "predecessor", valueOf(pred.getUniqueID()));
+                json.append(',');
+                appendField(json, "relation", quote(relationTypeCode(relation)));
+                json.append(',');
+                appendField(json, "lag", String.valueOf(relationLagMillis(relation)));
+                json.append('}');
             }
             json.append(']');
             json.append(',');
@@ -285,5 +291,69 @@ public final class MppImporter {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private static String relationTypeCode(Relation relation) {
+        Object type = tryInvokeObject(relation, "getType");
+        if (type == null) {
+            return "FS";
+        }
+
+        Object value = tryInvokeObject(type, "getValue");
+        if (value instanceof Number) {
+            int numeric = ((Number) value).intValue();
+            if (numeric == 0) {
+                return "FF";
+            } else if (numeric == 1) {
+                return "FS";
+            } else if (numeric == 2) {
+                return "SF";
+            } else if (numeric == 3) {
+                return "SS";
+            }
+        }
+
+        String text = String.valueOf(type).toUpperCase(Locale.ROOT);
+        if (text.contains("FINISH_FINISH") || text.contains("FF")) {
+            return "FF";
+        }
+        if (text.contains("START_FINISH") || text.contains("SF")) {
+            return "SF";
+        }
+        if (text.contains("START_START") || text.contains("SS")) {
+            return "SS";
+        }
+        return "FS";
+    }
+
+    private static long relationLagMillis(Relation relation) {
+        Object lag = tryInvokeObject(relation, "getLag");
+        if (lag == null) {
+            return 0L;
+        }
+
+        Object encodedMillis = tryInvokeObject(lag, "getEncodedMillis");
+        if (encodedMillis instanceof Number) {
+            return ((Number) encodedMillis).longValue();
+        }
+
+        Object duration = tryInvokeObject(lag, "getDuration");
+        if (duration instanceof Number) {
+            return Math.round(((Number) duration).doubleValue());
+        }
+
+        if (lag instanceof Number) {
+            return ((Number) lag).longValue();
+        }
+
+        return 0L;
+    }
+
+    private static Object tryInvokeObject(Object target, String methodName) {
+        try {
+            return target.getClass().getMethod(methodName).invoke(target);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
     }
 }

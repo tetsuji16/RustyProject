@@ -1,6 +1,8 @@
 mod history;
 mod model;
 mod mpp_import;
+mod pod_export;
+mod pod_import;
 mod project_file;
 mod schedule;
 mod ui;
@@ -12,6 +14,8 @@ use eframe::egui::{
 use history::UndoRedo;
 use model::{EditCommand, ProjectSnapshot, TaskSnapshot};
 use mpp_import::load_mpp;
+use pod_export::{save_pod, save_xml};
+use pod_import::{load_pod, load_xml};
 use project_file::{load as load_project, save as save_project, ProjectDocument};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -21,6 +25,8 @@ const APP_NAME: &str = "ProjectLibre";
 const VIEW_WIDTH: f32 = 2048.0;
 const VIEW_HEIGHT: f32 = 1222.0;
 const SAMPLE_MPP_PATH: &str = "sample data/Commercial construction project plan.mpp";
+const SAMPLE_XML_PATH: &str = "sample data/Commercial construction project plan.xml";
+const SAMPLE_POD_PATH: &str = "sample data/Commercial construction project plan.pod";
 
 const ROW_H: f32 = 31.0;
 const LEFT_TABLE_W: f32 = crate::ui::gantt_view::LEFT_TABLE_W;
@@ -100,7 +106,7 @@ impl GanttApp {
             project_path_input: bundled_sample
                 .as_ref()
                 .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "project.json".to_string()),
+                .unwrap_or_else(|| "project.xml".to_string()),
             status_message: String::from("Ready"),
             active_tab: TopTab::File,
             icons,
@@ -199,19 +205,29 @@ impl eframe::App for GanttApp {
                         if splitter_response.hovered() || splitter_response.dragged() {
                             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                         }
+
                         let painter = ui.painter_at(content_rect);
-                        self.handle_pointer(ctx, &chart, &visible_rows);
+                        self.handle_pointer(
+                            ctx,
+                            content_rect,
+                            self.left_table_width,
+                            &chart,
+                            &visible_rows,
+                        );
+                        let drag_preview = self.drag.as_ref().map(DragState::preview);
 
                         crate::ui::gantt_view::draw_workspace(
                             &painter,
                             content_rect,
                             &chart,
+                            self.snapshot.status_date,
                             &self.snapshot.tasks,
                             &visible_rows,
                             self.selected_task_id,
                             &self.collapsed_summaries,
                             self.left_table_width,
                             &self.icons,
+                            drag_preview.as_ref(),
                         );
                     });
             });
@@ -346,9 +362,9 @@ impl GanttApp {
                 "Resource Usage",
                 vec2(18.0, 18.0),
             );
-            let _ = self
-                .icons
-                .icon_button(ui, IconKey::NoSubWindow, "No sub window", vec2(18.0, 18.0));
+            let _ =
+                self.icons
+                    .icon_button(ui, IconKey::NoSubWindow, "No sub window", vec2(18.0, 18.0));
         });
     }
 
@@ -372,8 +388,12 @@ impl GanttApp {
                     .large_ribbon_button(ui, IconKey::Paste, "貼り付け", "Paste");
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
-                    let _ = this.icons.row_button(ui, IconKey::Copy, "コピー", "Copy", 92.0);
-                    let _ = this.icons.row_button(ui, IconKey::Cut, "切り取り", "Cut", 92.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::Copy, "コピー", "Copy", 92.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::Cut, "切り取り", "Cut", 92.0);
                 });
             });
         });
@@ -439,12 +459,16 @@ impl GanttApp {
                         {
                             this.load_project_from_dialog();
                         }
-                        let _ = this
-                            .icons
-                            .row_button(ui, IconKey::New, "新規", "New project", 112.0);
-                    let _ = this
-                        .icons
-                        .row_button(ui, IconKey::SaveAs, "名前を付けて保存", "Save as", 112.0);
+                        let _ =
+                            this.icons
+                                .row_button(ui, IconKey::New, "新規", "New project", 112.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::SaveAs,
+                            "名前を付けて保存",
+                            "Save as",
+                            112.0,
+                        );
                     });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
@@ -462,10 +486,16 @@ impl GanttApp {
             self.draw_band(ui, "印刷", 118.0, |ui, this| {
                 ui.vertical(|ui| {
                     ui.add_space(2.0);
-                    let _ = this.icons.row_button(ui, IconKey::Print, "印刷", "Print", 96.0);
-                    let _ =
-                        this.icons
-                            .row_button(ui, IconKey::Preview, "プレビュー", "Print preview", 96.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::Print, "印刷", "Print", 96.0);
+                    let _ = this.icons.row_button(
+                        ui,
+                        IconKey::Preview,
+                        "プレビュー",
+                        "Print preview",
+                        96.0,
+                    );
                     let _ = this
                         .icons
                         .row_button(ui, IconKey::PDF, "PDF", "Export PDF", 96.0);
@@ -478,9 +508,12 @@ impl GanttApp {
     fn draw_project_band(&mut self, ui: &mut egui::Ui) {
         self.draw_band(ui, "プロジェクト", 360.0, |ui, this| {
             ui.horizontal_top(|ui| {
-                let _ = this
-                    .icons
-                    .large_ribbon_button(ui, IconKey::Projects, "プロジェクト", "Project");
+                let _ = this.icons.large_ribbon_button(
+                    ui,
+                    IconKey::Projects,
+                    "プロジェクト",
+                    "Project",
+                );
                 ui.add_space(5.0);
 
                 ui.scope(|ui| {
@@ -593,18 +626,22 @@ impl GanttApp {
                     });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        let _ = this
-                            .icons
-                            .row_button(ui, IconKey::InsertLink, "リンク", "Link", 88.0);
-                        let _ = this
-                            .icons
-                            .row_button(ui, IconKey::DeleteLink, "リンク解除", "Unlink", 88.0);
+                        let _ =
+                            this.icons
+                                .row_button(ui, IconKey::InsertLink, "リンク", "Link", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::DeleteLink,
+                            "リンク解除",
+                            "Unlink",
+                            88.0,
+                        );
                     });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        let _ = this
-                            .icons
-                            .row_button(ui, IconKey::Info, "情報", "Information", 88.0);
+                        let _ =
+                            this.icons
+                                .row_button(ui, IconKey::Info, "情報", "Information", 88.0);
                         let _ = this.icons.row_button(
                             ui,
                             IconKey::Calendar,
@@ -612,7 +649,9 @@ impl GanttApp {
                             "Change working time",
                             88.0,
                         );
-                        let _ = this.icons.row_button(ui, IconKey::Note, "メモ", "Notes", 88.0);
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::Note, "メモ", "Notes", 88.0);
                         let _ = this.icons.row_button(
                             ui,
                             IconKey::AssignResources,
@@ -640,7 +679,9 @@ impl GanttApp {
                     });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        let _ = this.icons.row_button(ui, IconKey::Find, "検索", "Find", 88.0);
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::Find, "検索", "Find", 88.0);
                         let _ = this.icons.row_button(
                             ui,
                             IconKey::ScrollToTask,
@@ -648,7 +689,13 @@ impl GanttApp {
                             "Scroll to task",
                             88.0,
                         );
-                        let _ = this.icons.row_button(ui, IconKey::Update, "更新", "Update tasks", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::Update,
+                            "更新",
+                            "Update tasks",
+                            88.0,
+                        );
                     });
                 });
             });
@@ -670,12 +717,19 @@ impl GanttApp {
                             "Insert resource",
                             88.0,
                         );
-                        let _ = this.icons.row_button(ui, IconKey::Delete, "削除", "Delete", 88.0);
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::Delete, "削除", "Delete", 88.0);
                     });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        let _ =
-                            this.icons.row_button(ui, IconKey::Indent, "レベル下げ", "Indent", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::Indent,
+                            "レベル下げ",
+                            "Indent",
+                            88.0,
+                        );
                         let _ = this.icons.row_button(
                             ui,
                             IconKey::Outdent,
@@ -686,7 +740,9 @@ impl GanttApp {
                     });
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
-                        let _ = this.icons.row_button(ui, IconKey::Info, "情報", "Information", 88.0);
+                        let _ =
+                            this.icons
+                                .row_button(ui, IconKey::Info, "情報", "Information", 88.0);
                         let _ = this.icons.row_button(
                             ui,
                             IconKey::Calendar,
@@ -694,8 +750,12 @@ impl GanttApp {
                             "Change working time",
                             88.0,
                         );
-                        let _ = this.icons.row_button(ui, IconKey::Note, "メモ", "Notes", 88.0);
-                        let _ = this.icons.row_button(ui, IconKey::Find, "検索", "Find", 88.0);
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::Note, "メモ", "Notes", 88.0);
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::Find, "検索", "Find", 88.0);
                     });
                 });
             });
@@ -709,9 +769,9 @@ impl GanttApp {
                     .icons
                     .large_ribbon_button(ui, IconKey::Gantt, "ガント", "Gantt");
                 ui.add_space(4.0);
-                let _ = this
-                    .icons
-                    .row_button(ui, IconKey::Network, "ネットワーク", "Network", 88.0);
+                let _ =
+                    this.icons
+                        .row_button(ui, IconKey::Network, "ネットワーク", "Network", 88.0);
                 ui.add_space(4.0);
                 let _ = this.icons.row_button(ui, IconKey::Wbs, "WBS", "WBS", 88.0);
                 ui.add_space(4.0);
@@ -723,9 +783,13 @@ impl GanttApp {
                     124.0,
                 );
                 ui.add_space(4.0);
-                let _ = this.icons.row_button(ui, IconKey::ZoomIn, "ズーム イン", "Zoom in", 88.0);
+                let _ = this
+                    .icons
+                    .row_button(ui, IconKey::ZoomIn, "ズーム イン", "Zoom in", 88.0);
                 ui.add_space(4.0);
-                let _ = this.icons.row_button(ui, IconKey::ZoomOut, "ズーム アウト", "Zoom out", 88.0);
+                let _ =
+                    this.icons
+                        .row_button(ui, IconKey::ZoomOut, "ズーム アウト", "Zoom out", 88.0);
             });
         });
     }
@@ -733,9 +797,9 @@ impl GanttApp {
     fn draw_resource_views_zoom_band(&mut self, ui: &mut egui::Ui) {
         self.draw_band(ui, "ビュー", 480.0, |ui, this| {
             ui.horizontal_top(|ui| {
-                let _ = this
-                    .icons
-                    .large_ribbon_button(ui, IconKey::Resources, "リソース", "Resources");
+                let _ =
+                    this.icons
+                        .large_ribbon_button(ui, IconKey::Resources, "リソース", "Resources");
                 ui.add_space(4.0);
                 let _ = this.icons.row_button(ui, IconKey::Rbs, "RBS", "RBS", 88.0);
                 ui.add_space(4.0);
@@ -747,9 +811,13 @@ impl GanttApp {
                     124.0,
                 );
                 ui.add_space(4.0);
-                let _ = this.icons.row_button(ui, IconKey::ZoomIn, "ズーム イン", "Zoom in", 88.0);
+                let _ = this
+                    .icons
+                    .row_button(ui, IconKey::ZoomIn, "ズーム イン", "Zoom in", 88.0);
                 ui.add_space(4.0);
-                let _ = this.icons.row_button(ui, IconKey::ZoomOut, "ズーム アウト", "Zoom out", 88.0);
+                let _ =
+                    this.icons
+                        .row_button(ui, IconKey::ZoomOut, "ズーム アウト", "Zoom out", 88.0);
             });
         });
     }
@@ -761,9 +829,9 @@ impl GanttApp {
                     .icons
                     .large_ribbon_button(ui, IconKey::Gantt, "ガント", "Gantt");
                 ui.add_space(4.0);
-                let _ = this
-                    .icons
-                    .row_button(ui, IconKey::Network, "ネットワーク", "Network", 88.0);
+                let _ =
+                    this.icons
+                        .row_button(ui, IconKey::Network, "ネットワーク", "Network", 88.0);
                 ui.add_space(4.0);
                 let _ = this.icons.row_button(ui, IconKey::Wbs, "WBS", "WBS", 88.0);
                 ui.add_space(4.0);
@@ -781,9 +849,9 @@ impl GanttApp {
     fn draw_resource_views_band(&mut self, ui: &mut egui::Ui) {
         self.draw_band(ui, "リソース ビュー", 292.0, |ui, this| {
             ui.horizontal_top(|ui| {
-                let _ = this
-                    .icons
-                    .large_ribbon_button(ui, IconKey::Resources, "リソース", "Resources");
+                let _ =
+                    this.icons
+                        .large_ribbon_button(ui, IconKey::Resources, "リソース", "Resources");
                 ui.add_space(4.0);
                 let _ = this.icons.row_button(ui, IconKey::Rbs, "RBS", "RBS", 88.0);
                 ui.add_space(4.0);
@@ -805,9 +873,13 @@ impl GanttApp {
             self.draw_resource_views_band(ui);
             self.draw_band(ui, "その他 ビュー", 146.0, |ui, this| {
                 ui.vertical(|ui| {
-                    let _ = this
-                        .icons
-                        .row_button(ui, IconKey::Projects, "プロジェクト", "Projects", 124.0);
+                    let _ = this.icons.row_button(
+                        ui,
+                        IconKey::Projects,
+                        "プロジェクト",
+                        "Projects",
+                        124.0,
+                    );
                     let _ = this
                         .icons
                         .row_button(ui, IconKey::Report, "レポート", "Report", 124.0);
@@ -933,7 +1005,12 @@ impl GanttApp {
             let response = response.on_hover_text("ProjectLibre");
             if response.clicked() {
                 let _ = std::process::Command::new("cmd")
-                    .args(["/C", "start", "", "https://www.projectlibre.com"])
+                    .args([
+                        "/C",
+                        "start",
+                        "",
+                        "https://github.com/tetsuji16/RustyProject",
+                    ])
                     .spawn();
             }
         } else {
@@ -960,7 +1037,7 @@ impl GanttApp {
 
     fn load_project_from_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Project", &["json", "mpp"])
+            .add_filter("Project", &["json", "mpp", "xml", "pod"])
             .pick_file()
         {
             self.project_path_input = path.display().to_string();
@@ -986,6 +1063,28 @@ impl GanttApp {
                     self.status_message = format!("Load failed: {err}");
                 }
             },
+            Some("xml") => match load_xml(path) {
+                Ok(snapshot) => {
+                    self.push_history_checkpoint();
+                    self.restore_snapshot(snapshot);
+                    self.project_path_input = path.to_string();
+                    self.status_message = format!("Loaded {path}");
+                }
+                Err(err) => {
+                    self.status_message = format!("Load failed: {err}");
+                }
+            },
+            Some("pod") => match load_pod(path) {
+                Ok(snapshot) => {
+                    self.push_history_checkpoint();
+                    self.restore_snapshot(snapshot);
+                    self.project_path_input = path.to_string();
+                    self.status_message = format!("Loaded {path}");
+                }
+                Err(err) => {
+                    self.status_message = format!("Load failed: {err}");
+                }
+            },
             _ => match load_project(path) {
                 Ok(document) => {
                     self.push_history_checkpoint();
@@ -1000,7 +1099,7 @@ impl GanttApp {
     }
 
     fn save_project_to_entry_or_dialog(&mut self) {
-        let path = json_save_path(self.project_path_input.trim());
+        let path = save_target_path(self.project_path_input.trim());
         if path.is_empty() {
             self.save_project_to_dialog();
             return;
@@ -1009,13 +1108,9 @@ impl GanttApp {
     }
 
     fn save_project_to_dialog(&mut self) {
-        let suggested = if self.project_path_input.trim().is_empty() {
-            "project.json".to_string()
-        } else {
-            json_save_path(self.project_path_input.trim())
-        };
+        let suggested = suggested_save_name(self.project_path_input.trim());
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Project", &["json"])
+            .add_filter("Project", &["json", "xml", "pod"])
             .set_file_name(&suggested)
             .save_file()
         {
@@ -1026,13 +1121,37 @@ impl GanttApp {
     }
 
     fn save_project_to_path(&mut self, path: &str) {
-        let document = self.capture_document();
-        match save_project(path, &document) {
-            Ok(()) => {
-                self.status_message = format!("Saved {path}");
-            }
-            Err(err) => {
-                self.status_message = format!("Save failed: {err}");
+        let ext = Path::new(path)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase());
+        match ext.as_deref() {
+            Some("xml") | Some("mpp") => match save_xml(path, &self.snapshot) {
+                Ok(()) => {
+                    self.status_message = format!("Saved {path}");
+                }
+                Err(err) => {
+                    self.status_message = format!("Save failed: {err}");
+                }
+            },
+            Some("pod") => match save_pod(path, &self.snapshot) {
+                Ok(()) => {
+                    self.status_message = format!("Saved {path}");
+                }
+                Err(err) => {
+                    self.status_message = format!("Save failed: {err}");
+                }
+            },
+            _ => {
+                let document = self.capture_document();
+                match save_project(path, &document) {
+                    Ok(()) => {
+                        self.status_message = format!("Saved {path}");
+                    }
+                    Err(err) => {
+                        self.status_message = format!("Save failed: {err}");
+                    }
+                }
             }
         }
     }
@@ -1183,7 +1302,8 @@ impl GanttApp {
         self.snapshot.clear_display_texts();
         self.snapshot.remove_subtree_at(index);
         for task in &mut self.snapshot.tasks {
-            task.predecessors.retain(|pred| !deleted_ids.contains(pred));
+            task.predecessors
+                .retain(|pred| !deleted_ids.contains(&pred.predecessor));
         }
         self.selected_task_id = self
             .snapshot
@@ -1202,6 +1322,8 @@ impl GanttApp {
     fn handle_pointer(
         &mut self,
         ctx: &egui::Context,
+        content_rect: Rect,
+        left_table_width: f32,
         chart: &crate::ui::gantt_view::TimelineGeometry,
         visible_rows: &[crate::ui::gantt_view::VisibleTaskRow],
     ) {
@@ -1233,11 +1355,19 @@ impl GanttApp {
 
         if pointer.primary_pressed() {
             if let Some(pointer_pos) = pointer.interact_pos() {
+                let local_pos = pos2(
+                    pointer_pos.x - content_rect.left(),
+                    pointer_pos.y - content_rect.top(),
+                );
+                let table_rect = Rect::from_min_size(
+                    pos2(0.0, 0.0),
+                    vec2(left_table_width, content_rect.height()),
+                );
                 if let Some((row, is_toggle)) = crate::ui::task_table::hit_test_row_toggle(
-                    chart,
+                    table_rect,
                     &self.snapshot.tasks,
                     visible_rows,
-                    pointer_pos,
+                    local_pos,
                 ) {
                     let task = &self.snapshot.tasks[row.task_index];
                     self.selected_task_id = task.number;
@@ -1258,6 +1388,7 @@ impl GanttApp {
                     task_id: task.number,
                     action: hit.action,
                     origin_pointer: hit.pointer,
+                    current_pointer: hit.pointer,
                     original_start: task.start,
                     original_finish: task.finish,
                     history_snapshot,
@@ -1274,21 +1405,24 @@ impl GanttApp {
         if let Some(drag) = self.drag.clone() {
             if pointer.primary_down() {
                 if let Some(pointer_pos) = pointer.interact_pos() {
-                    if let Some(edit) = drag.to_edit(chart, pointer_pos) {
-                        self.send_edit(edit);
-                        if let Some(active_drag) = self.drag.as_mut() {
+                    if let Some(active_drag) = self.drag.as_mut() {
+                        active_drag.current_pointer = pointer_pos;
+                        if active_drag.current_pointer != active_drag.origin_pointer {
                             active_drag.changed = true;
                         }
-                        self.selected_task_id = drag.task_id;
                     }
+                    self.selected_task_id = drag.task_id;
                     ctx.request_repaint();
                 }
             }
 
-            if pointer.any_released() {
+            if pointer.primary_released() {
                 if let Some(active_drag) = self.drag.take() {
                     if active_drag.changed {
-                        self.history.push(active_drag.history_snapshot);
+                        if let Some(edit) = active_drag.to_edit(chart) {
+                            self.send_edit(edit);
+                            self.history.push(active_drag.history_snapshot);
+                        }
                     }
                 }
             }
@@ -1296,22 +1430,53 @@ impl GanttApp {
     }
 }
 
-fn json_save_path(path: &str) -> String {
+fn save_target_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return String::new();
     }
 
     let path = Path::new(trimmed);
-    if path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case("mpp"))
-        .unwrap_or(false)
-    {
-        path.with_extension("json").display().to_string()
-    } else {
-        trimmed.to_string()
+    match path.extension().and_then(|value| value.to_str()) {
+        Some(ext) if ext.eq_ignore_ascii_case("json") => trimmed.to_string(),
+        Some(ext)
+            if ext.eq_ignore_ascii_case("xml")
+                || ext.eq_ignore_ascii_case("mpp")
+                || ext.eq_ignore_ascii_case("pod") =>
+        {
+            path.with_extension("xml").display().to_string()
+        }
+        Some(_) => path.with_extension("xml").display().to_string(),
+        None => path.with_extension("xml").display().to_string(),
+    }
+}
+
+fn suggested_save_name(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return "project.xml".to_string();
+    }
+
+    let path = Path::new(trimmed);
+    match path.extension().and_then(|value| value.to_str()) {
+        Some(ext) if ext.eq_ignore_ascii_case("json") => path
+            .with_extension("json")
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "project.json".to_string()),
+        Some(ext)
+            if ext.eq_ignore_ascii_case("xml")
+                || ext.eq_ignore_ascii_case("mpp")
+                || ext.eq_ignore_ascii_case("pod") =>
+        {
+            path.with_extension("xml")
+                .file_name()
+                .and_then(|value| value.to_str())
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "project.xml".to_string())
+        }
+        _ => "project.xml".to_string(),
     }
 }
 
@@ -1339,6 +1504,7 @@ struct DragState {
     task_id: usize,
     action: crate::ui::gantt_chart::DragAction,
     origin_pointer: Pos2,
+    current_pointer: Pos2,
     original_start: NaiveDate,
     original_finish: NaiveDate,
     history_snapshot: ProjectDocument,
@@ -1346,12 +1512,20 @@ struct DragState {
 }
 
 impl DragState {
-    fn to_edit(
-        &self,
-        chart: &crate::ui::gantt_view::TimelineGeometry,
-        pointer: Pos2,
-    ) -> Option<EditCommand> {
-        let delta_days = chart.pixel_delta_to_days(pointer.x - self.origin_pointer.x);
+    fn preview(&self) -> crate::ui::gantt_view::DragPreview {
+        crate::ui::gantt_view::DragPreview {
+            task_index: self.task_index,
+            task_id: self.task_id,
+            action: self.action,
+            origin_pointer: self.origin_pointer,
+            current_pointer: self.current_pointer,
+            original_start: self.original_start,
+            original_finish: self.original_finish,
+        }
+    }
+
+    fn to_edit(&self, chart: &crate::ui::gantt_view::TimelineGeometry) -> Option<EditCommand> {
+        let delta_days = chart.pixel_delta_to_days(self.current_pointer.x - self.origin_pointer.x);
         match self.action {
             crate::ui::gantt_chart::DragAction::Move => Some(EditCommand::Move {
                 id: self.task_id,
@@ -1373,7 +1547,8 @@ impl DragState {
                     self.original_finish,
                     chart.row_top(self.task_index) + ROW_H * 0.5,
                 );
-                let progress = ((pointer.x - bar.left()) / bar.width().max(1.0)).clamp(0.0, 1.0);
+                let progress =
+                    ((self.current_pointer.x - bar.left()) / bar.width().max(1.0)).clamp(0.0, 1.0);
                 Some(EditCommand::SetProgress {
                     id: self.task_id,
                     progress,
@@ -1384,6 +1559,16 @@ impl DragState {
 }
 
 fn bundled_sample_path() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SAMPLE_MPP_PATH);
-    path.exists().then_some(path)
+    let xml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SAMPLE_XML_PATH);
+    if xml_path.exists() {
+        return Some(xml_path);
+    }
+
+    let pod_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SAMPLE_POD_PATH);
+    if pod_path.exists() {
+        return Some(pod_path);
+    }
+
+    let mpp_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SAMPLE_MPP_PATH);
+    mpp_path.exists().then_some(mpp_path)
 }

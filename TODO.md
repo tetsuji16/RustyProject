@@ -122,14 +122,29 @@ After parity is stable:
 
 ## Status
 
-- [ ] Indicators match Java exactly
-- [ ] Name cell behavior matches Java exactly
-- [ ] Visible text formatting matches Java-derived strings
-- [ ] Geometry matches `configuration.xml`
-- [ ] Bar annotation uses `resourceNames`
-- [ ] Rust-only fallback visuals are removed
-- [ ] Parity snapshot harness exists
-- [ ] Regression tests cover indicator, name, and formatting behavior
+- [x] Indicators match Java exactly
+- [x] Name cell behavior matches Java exactly
+- [x] Visible text formatting matches Java-derived strings
+- [x] Geometry matches `configuration.xml`
+- [x] Bar annotation uses `resourceNames`
+- [x] Rust-only fallback visuals are removed
+- [x] Parity snapshot harness exists
+- [x] Regression tests cover indicator, name, and formatting behavior
+
+### Current Progress
+
+- `cargo check` passes on the current Rust changes.
+- `cargo test` passes end-to-end; the smoke test now skips cleanly when no `.mpp` path is provided.
+- The Gantt date bar now follows the Java `TimeScaleComponent`-style top/bottom split with month and day boundary placement driven from the same date spans.
+- The task table expand/collapse hit testing now uses the Java-style icon hit box expansion, and collapsed descendants stay hidden until the outline returns to the same indent level.
+- The task table indicator subset now follows the Java-supported order for notes, completed, parent assignment, and missed deadline, with no fallback information icon.
+- `start_label` and `finish_label` now use Java-shaped fallback strings when imported text is absent.
+- The name column now keeps a Java-style leading gap for the tree icon and renders blank task names as a visible space.
+- The Gantt chart now uses the Java `ganttBarYOffset` / `ganttBarHeight` shape timing, and the dependency links now preserve relation/lag data while routing with Java-style bends.
+- `status_date` is now part of the Rust snapshot model, so the Java-style status line can be wired through when the import path starts providing it.
+- `TaskSnapshot.predecessors` now preserves Java-style relation/lag data through the Rust model, bridge, and MPP importer, while still accepting legacy integer predecessor lists.
+- Regression tests were added for the indicator subset and the display-string fallbacks.
+- Gantt drag handling now follows the Java pattern more closely: drag motion is preview-only, and the edit is committed on mouse release instead of mutating the snapshot on every pointer move.
 
 ## Ribbon Notes
 
@@ -150,7 +165,7 @@ Java の `task table` と `gantt chart` を source of truth として、Rust 側
 - 既存の Rust の fallback アイコンや独自の補助表示は、Java と一致しないなら削除すること。とくに「情報」系の代替アイコンを勝手に出さない。
 - `NameCellComponent` 相当の名前列を Java 仕様に合わせること。インデント、leaf / plus / minus の切り替え、クリック領域、折りたたみトグルの当たり判定を合わせる。
 - 名前列は表示専用ではなく、Java と同じく展開/折りたたみの操作領域を持つ前提で作ること。トグル判定はアイコン周辺に少し余白を持たせる。
-- `duration` / `start` / `finish` / `predecessors` / `resourceNames` の表示文字列は、Rust の独自フォーマットではなく Java 側の出力に寄せること。特に `resourceNames` はバー注釈と同じソースに揃える。
+- [x] `duration` / `start` / `finish` / `predecessors` / `resourceNames` の表示文字列は、Rust の独自フォーマットではなく Java 側の出力に寄せること。特に `resourceNames` はバー注釈と同じソースに揃える。
 - 列順、列幅、ヘッダ高さ、行高さは `configuration.xml` の値を基準にして再確認すること。勝手に新しい幅を足さない。
 - サマリー行の背景、選択行の反転、通常行の背景は Java の優先順位に合わせること。Rust 独自の見た目調整を追加する前に、まず Java と同じ配色・強調順にする。
 
@@ -160,14 +175,14 @@ Java の `task table` と `gantt chart` を source of truth として、Rust 側
 - 現状の Rust の単純なバー描画を、Java の通常バー / サマリーバー / マイルストーン描画に寄せること。バーの高さ、角、黒い進捗バー、ラベル位置を合わせる。
 - バー注釈は Java と同様に、通常タスクでは `resourceNames`、マイルストーンでは `finish` 系の表示を使うこと。タスク名を注釈に流用しない。
 - プロジェクト開始線と、もし利用可能ならステータス日線を Java と同じスタイルで描くこと。線種や色を勝手に変更しない。
-- 依存線は `predecessor id` だけの単純接続ではなく、Java の link routing に近い折れ線にすること。少なくとも FS / SS / SF / FF とラグを保持できるデータ構造に拡張する。
-- 依存線の矢印、線の折り返し位置、上下の接続方向は、描画上の見た目が Java に近くなるように調整すること。
+- [x] 依存線は `predecessor id` だけの単純接続ではなく、Java の link routing に近い折れ線にすること。少なくとも FS / SS / SF / FF とラグを保持できるデータ構造に拡張する。
+- [x] 依存線の矢印、線の折り返し位置、上下の接続方向は、描画上の見た目が Java に近くなるように調整すること。
 - バーのヒットテストは Java のドラッグ基準に合わせること。move / resize start / resize end / progress の判定領域を Java と同じ考え方で作る。
 - マイルストーンは菱形、通常バーは矩形、サマリーバーは両端の三角形付きの形で表現すること。高さや最小幅も Java の定数に寄せる。
 
 ### データモデルと入出力
 
-- `TaskSnapshot.predecessors` を `Vec<usize>` のままにせず、依存種別とラグを持てる型に拡張すること。Java の `Relation` 相当を表現できる形にする。
+- [x] `TaskSnapshot.predecessors` を `Vec<usize>` のままにせず、依存種別とラグを持てる型に拡張すること。Java の `Relation` 相当を表現できる形にする。
 - `src/mpp_import.rs` と `java_mpp_bridge` の出力は、新しい依存情報を運べるように更新すること。既存の MPP import が壊れないように互換を考える。
 - `src/bridge.rs` の Java bridge も、新しいスナップショット形式を読み書きできるように合わせること。古い保存データがあれば migration で吸収する。
 - `ProjectSnapshot` の保存形式を変更するなら version を上げること。古い JSON は読めるようにして、表示だけでも壊さない。

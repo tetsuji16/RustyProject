@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use eframe::egui::{pos2, vec2, Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke};
 
 use crate::model::TaskSnapshot;
-use crate::ui::gantt_view::{TimelineGeometry, VisibleTaskRow, HEADER_H, ROW_H};
+use crate::ui::gantt_view::{VisibleTaskRow, HEADER_H, ROW_H};
 use crate::ui::icons::{IconKey, ProjectLibreIcons};
 
 pub const ROWNUM_W: f32 = 40.0;
@@ -11,6 +11,7 @@ pub const DEFAULT_TABLE_W: f32 = 614.0;
 
 const NAME_ICON_W: f32 = 16.0;
 const NAME_TEXT_PAD: f32 = 2.0;
+const NAME_LEADING_PAD: f32 = 16.0;
 const INDICATOR_SIZE: f32 = 12.0;
 const INDICATOR_GAP: f32 = 2.0;
 
@@ -136,7 +137,7 @@ pub fn draw_rows(
         let rownum_rect = Rect::from_min_size(pos2(rect.left(), y), vec2(ROWNUM_W, ROW_H));
         let selected_row = task.number == selected_task_id;
         let bg = if selected_row {
-            Color32::from_rgb(84, 94, 108)
+            Color32::from_rgb(64, 64, 64)
         } else if task.summary {
             Color32::from_rgb(246, 246, 246)
         } else {
@@ -199,23 +200,30 @@ pub fn draw_rows(
 }
 
 pub fn hit_test_row_toggle(
-    chart: &TimelineGeometry,
+    table_rect: Rect,
     tasks: &[TaskSnapshot],
     visible_rows: &[VisibleTaskRow],
     pointer: Pos2,
 ) -> Option<(VisibleTaskRow, bool)> {
-    if pointer.x < chart.origin_x || pointer.x > chart.gantt_left {
+    if pointer.x < table_rect.left() || pointer.x > table_rect.right() {
         return None;
     }
 
-    let row_index = chart.row_at(pointer, visible_rows.len())?;
+    if pointer.y < table_rect.top() + HEADER_H {
+        return None;
+    }
+
+    let row_index = ((pointer.y - table_rect.top() - HEADER_H) / ROW_H).floor() as usize;
+    if row_index >= visible_rows.len() {
+        return None;
+    }
     let row = visible_rows[row_index];
     let task = &tasks[row.task_index];
     if !task.summary {
         return None;
     }
 
-    let icon_rect = name_icon_rect(chart, row_index, task);
+    let icon_rect = summary_toggle_icon_rect(table_rect, row_index, task);
     Some((row, icon_rect.expand(4.0).contains(pointer)))
 }
 
@@ -267,11 +275,7 @@ fn draw_cell(
         "predecessors" => draw_text(
             painter,
             rect.shrink2(vec2(8.0, 0.0)),
-            task.predecessors
-                .iter()
-                .map(|id| id.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+            task.predecessors_label(),
             Align2::LEFT_CENTER,
             color,
             14.0,
@@ -317,10 +321,12 @@ fn draw_name(
         draw_tree_icon(painter, icon_rect, IconKey::Leaf, selected, icons);
     }
 
+    let text = name_text(task);
+
     clip.text(
         pos2(text_x, rect.center().y),
         Align2::LEFT_CENTER,
-        task.name.as_str(),
+        text,
         FontId::new(14.0, FontFamily::Proportional),
         color,
     );
@@ -347,11 +353,12 @@ fn draw_indicators(painter: &Painter, rect: Rect, task: &TaskSnapshot, icons: &P
 fn task_indicator_icons(task: &TaskSnapshot) -> Vec<IconKey> {
     let mut out = Vec::new();
 
-    if task.progress >= 1.0 {
-        out.push(IconKey::Completed);
-    }
+    // Java orders the indicators from left to right with notes first in the subset we support.
     if task.has_notes() {
         out.push(IconKey::Note);
+    }
+    if task.progress >= 1.0 {
+        out.push(IconKey::Completed);
     }
     if task.summary && !task.resource_names.is_empty() {
         out.push(IconKey::ParentAssignment);
@@ -439,14 +446,15 @@ fn draw_tree_icon(
 }
 
 fn name_icon_rect_from_rect(rect: Rect, task: &TaskSnapshot) -> Rect {
-    let x = rect.left() + task.indent as f32 * NAME_ICON_W;
+    let x = rect.left() + NAME_LEADING_PAD + task.indent as f32 * NAME_ICON_W;
     let y = rect.center().y - NAME_ICON_W * 0.5;
     Rect::from_min_size(pos2(x, y), vec2(NAME_ICON_W, NAME_ICON_W))
 }
 
-fn name_icon_rect(chart: &TimelineGeometry, row_index: usize, task: &TaskSnapshot) -> Rect {
-    let x = chart.origin_x + ROWNUM_W + task.indent as f32 * NAME_ICON_W;
-    let y = chart.row_top(row_index) + ROW_H * 0.5 - NAME_ICON_W * 0.5;
+pub fn summary_toggle_icon_rect(table_rect: Rect, row_index: usize, task: &TaskSnapshot) -> Rect {
+    let x = table_rect.left() + ROWNUM_W + NAME_LEADING_PAD + task.indent as f32 * NAME_ICON_W;
+    let y =
+        table_rect.top() + HEADER_H + row_index as f32 * ROW_H + ROW_H * 0.5 - NAME_ICON_W * 0.5;
     Rect::from_min_size(pos2(x, y), vec2(NAME_ICON_W, NAME_ICON_W))
 }
 
@@ -459,4 +467,117 @@ fn draw_indicator_header(painter: &Painter, center: Pos2) {
         ],
         Stroke::new(1.1, Color32::from_rgb(80, 80, 80)),
     );
+}
+
+fn name_text(task: &TaskSnapshot) -> &str {
+    if task.name.trim().is_empty() {
+        " "
+    } else {
+        task.name.as_str()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn task(
+        progress: f32,
+        summary: bool,
+        resource_names: Vec<&str>,
+        notes: Option<&str>,
+        deadline: Option<&str>,
+    ) -> TaskSnapshot {
+        TaskSnapshot {
+            number: 1,
+            name: "Task".to_string(),
+            start: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+            finish: NaiveDate::from_ymd_opt(2025, 2, 4).expect("date"),
+            progress,
+            indent: 0,
+            summary,
+            milestone: false,
+            predecessors: vec![],
+            resource_names: resource_names
+                .into_iter()
+                .map(|value| value.to_string())
+                .collect(),
+            start_text: None,
+            finish_text: None,
+            duration_text: None,
+            notes: notes.map(|value| value.to_string()),
+            deadline: deadline
+                .map(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("date")),
+        }
+    }
+
+    #[test]
+    fn indicators_follow_supported_java_order() {
+        let icons = task_indicator_icons(&task(
+            1.0,
+            true,
+            vec!["Alice", "Bob"],
+            Some("note"),
+            Some("2025-02-03"),
+        ));
+
+        assert_eq!(
+            icons,
+            vec![
+                IconKey::Note,
+                IconKey::Completed,
+                IconKey::ParentAssignment,
+                IconKey::MissedDeadline,
+            ]
+        );
+    }
+
+    #[test]
+    fn indicators_stay_empty_when_java_would_stay_empty() {
+        let icons = task_indicator_icons(&task(0.0, false, vec![], None, None));
+        assert!(icons.is_empty());
+    }
+
+    #[test]
+    fn name_icon_rect_keeps_the_java_style_leading_gap() {
+        let rect = Rect::from_min_size(pos2(10.0, 20.0), vec2(200.0, ROW_H));
+        let task = task(0.0, false, vec![], None, None);
+        let icon_rect = summary_toggle_icon_rect(rect, 0, &task);
+
+        assert_eq!(icon_rect.left(), 66.0);
+        assert_eq!(icon_rect.right(), 82.0);
+    }
+
+    #[test]
+    fn empty_names_render_as_a_visible_blank() {
+        let task = TaskSnapshot {
+            name: "   ".to_string(),
+            ..task(0.0, false, vec![], None, None)
+        };
+
+        assert_eq!(name_text(&task), " ");
+    }
+
+    #[test]
+    fn row_toggle_uses_the_same_icon_hit_box_expansion_as_java() {
+        let snapshot = crate::model::ProjectSnapshot {
+            start_date: NaiveDate::from_ymd_opt(2025, 2, 3).expect("date"),
+            end_date: NaiveDate::from_ymd_opt(2025, 2, 4).expect("date"),
+            status_date: None,
+            tasks: vec![task(0.0, true, vec![], None, None)],
+        };
+        let visible_rows = vec![VisibleTaskRow { task_index: 0 }];
+        let hit = hit_test_row_toggle(
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)),
+            &snapshot.tasks,
+            &visible_rows,
+            pos2(ROWNUM_W + NAME_LEADING_PAD + 2.0, HEADER_H + 2.0),
+        );
+
+        assert_eq!(
+            hit.map(|(row, toggle)| (row.task_index, toggle)),
+            Some((0, true))
+        );
+    }
 }

@@ -4,6 +4,8 @@ use chrono::NaiveDate;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+use crate::model::{DependencyLink, DependencyRelation};
+
 pub struct JavaBridge {
     child: Child,
     stdin: BufWriter<ChildStdin>,
@@ -106,15 +108,7 @@ impl JavaBridge {
                         .map_err(|err| format!("Invalid task name encoding: {err}"))?;
                     let name = String::from_utf8(name_bytes)
                         .map_err(|err| format!("Invalid task name UTF-8: {err}"))?;
-                    let preds = if preds.is_empty() {
-                        Vec::new()
-                    } else {
-                        preds
-                            .split(',')
-                            .map(|value| value.parse::<usize>())
-                            .collect::<Result<Vec<_>, _>>()
-                            .map_err(|err| format!("Invalid predecessor id: {err}"))?
-                    };
+                    let preds = parse_dependency_links(preds)?;
                     tasks.push(TaskSnapshot {
                         number: id
                             .parse::<usize>()
@@ -158,6 +152,7 @@ impl JavaBridge {
         Ok(ProjectSnapshot {
             start_date,
             end_date,
+            status_date: None,
             tasks,
         })
     }
@@ -194,6 +189,7 @@ pub enum EditCommand {
 pub struct ProjectSnapshot {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
+    pub status_date: Option<NaiveDate>,
     pub tasks: Vec<TaskSnapshot>,
 }
 
@@ -207,13 +203,118 @@ pub struct TaskSnapshot {
     pub indent: usize,
     pub summary: bool,
     pub milestone: bool,
-    pub predecessors: Vec<usize>,
+    pub predecessors: Vec<DependencyLink>,
     pub resource_names: Vec<String>,
     pub start_text: Option<String>,
     pub finish_text: Option<String>,
     pub duration_text: Option<String>,
     pub notes: Option<String>,
     pub deadline: Option<NaiveDate>,
+}
+
+fn parse_dependency_links(text: &str) -> Result<Vec<DependencyLink>, String> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    for raw_link in text.split([';', ',']) {
+        let link = raw_link.trim();
+        if link.is_empty() {
+            continue;
+        }
+        out.push(parse_dependency_link(link)?);
+    }
+    Ok(out)
+}
+
+fn parse_dependency_link(text: &str) -> Result<DependencyLink, String> {
+    let mut digits_end = 0;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            digits_end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    if digits_end == 0 {
+        return Err(format!("Invalid predecessor link: {text}"));
+    }
+
+    let predecessor = text[..digits_end]
+        .parse::<usize>()
+        .map_err(|err| format!("Invalid predecessor id in link '{text}': {err}"))?;
+    let rest = text[digits_end..].trim();
+    if rest.is_empty() {
+        return Ok(DependencyLink::fs(predecessor));
+    }
+
+    let relation = if rest.starts_with("FS") {
+        DependencyRelation::Fs
+    } else if rest.starts_with("FF") {
+        DependencyRelation::Ff
+    } else if rest.starts_with("SS") {
+        DependencyRelation::Ss
+    } else if rest.starts_with("SF") {
+        DependencyRelation::Sf
+    } else {
+        return Err(format!("Invalid dependency relation in link: {text}"));
+    };
+
+    let lag_text = rest[2..].trim();
+    let lag = if lag_text.is_empty() {
+        0
+    } else {
+        parse_dependency_lag(lag_text)?
+    };
+
+    Ok(DependencyLink {
+        predecessor,
+        relation,
+        lag,
+    })
+}
+
+fn parse_dependency_lag(text: &str) -> Result<i64, String> {
+    let text = text.trim();
+    let sign = if text.starts_with('-') {
+        -1
+    } else {
+        1
+    };
+    let numeric = text.trim_start_matches(['+', '-']);
+    let (number_text, unit) = numeric
+        .trim_end_matches(|ch: char| ch.is_whitespace())
+        .split_at(
+            numeric
+                .find(|ch: char| !ch.is_ascii_digit() && ch != '.')
+                .unwrap_or(numeric.len()),
+        );
+    let value = number_text
+        .parse::<f64>()
+        .map_err(|err| format!("Invalid lag value '{text}': {err}"))?;
+    let unit = unit.trim().to_ascii_lowercase();
+    const MILLIS_PER_SECOND: f64 = 1_000.0;
+    const MILLIS_PER_MINUTE: f64 = 60.0 * MILLIS_PER_SECOND;
+    const MILLIS_PER_HOUR: f64 = 60.0 * MILLIS_PER_MINUTE;
+    const MILLIS_PER_DAY: f64 = 24.0 * MILLIS_PER_HOUR;
+
+    let scale = if unit.starts_with("ms") {
+        1.0
+    } else if unit.starts_with('s') {
+        MILLIS_PER_SECOND
+    } else if unit.starts_with('m') {
+        MILLIS_PER_MINUTE
+    } else if unit.starts_with('h') {
+        MILLIS_PER_HOUR
+    } else if unit.starts_with('d') {
+        MILLIS_PER_DAY
+    } else {
+        return Err(format!("Invalid lag unit in link: {text}"));
+    };
+
+    Ok((sign as f64 * value * scale).round() as i64)
 }
 
 impl TaskSnapshot {
