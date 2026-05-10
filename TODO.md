@@ -136,7 +136,7 @@ After parity is stable:
 - `cargo check` passes on the current Rust changes.
 - `cargo test` passes end-to-end; the smoke test now skips cleanly when no `.mpp` path is provided.
 - The Gantt date bar now follows the Java `TimeScaleComponent`-style top/bottom split with month and day boundary placement driven from the same date spans.
-- The task table expand/collapse hit testing now uses the Java-style icon hit box expansion, and collapsed descendants stay hidden until the outline returns to the same indent level.
+- The task table expand/collapse hit testing now uses the Java-style icon hit box expansion, and the icon x-position now matches the actual name-cell layout instead of the indicators column.
 - The task table indicator subset now follows the Java-supported order for notes, completed, parent assignment, and missed deadline, with no fallback information icon.
 - `start_label` and `finish_label` now use Java-shaped fallback strings when imported text is absent.
 - The name column now keeps a Java-style leading gap for the tree icon and renders blank task names as a visible space.
@@ -163,8 +163,8 @@ Java の `task table` と `gantt chart` を source of truth として、Rust 側
 
 - `TaskIndicatorsComponent` 相当の指標列を Java と同じ条件順で描画すること。`completed`、`notes`、`parentAssignment`、`missedDeadline` の順序を崩さず、Java で空なら Rust でも空にする。
 - 既存の Rust の fallback アイコンや独自の補助表示は、Java と一致しないなら削除すること。とくに「情報」系の代替アイコンを勝手に出さない。
-- `NameCellComponent` 相当の名前列を Java 仕様に合わせること。インデント、leaf / plus / minus の切り替え、クリック領域、折りたたみトグルの当たり判定を合わせる。
-- 名前列は表示専用ではなく、Java と同じく展開/折りたたみの操作領域を持つ前提で作ること。トグル判定はアイコン周辺に少し余白を持たせる。
+- [x] `NameCellComponent` 相当の名前列を Java 仕様に合わせること。インデント、leaf / plus / minus の切り替え、クリック領域、折りたたみトグルの当たり判定を合わせる。
+- [x] 名前列は表示専用ではなく、Java と同じく展開/折りたたみの操作領域を持つ前提で作ること。トグル判定はアイコン周辺に少し余白を持たせる。
 - [x] `duration` / `start` / `finish` / `predecessors` / `resourceNames` の表示文字列は、Rust の独自フォーマットではなく Java 側の出力に寄せること。特に `resourceNames` はバー注釈と同じソースに揃える。
 - 列順、列幅、ヘッダ高さ、行高さは `configuration.xml` の値を基準にして再確認すること。勝手に新しい幅を足さない。
 - サマリー行の背景、選択行の反転、通常行の背景は Java の優先順位に合わせること。Rust 独自の見た目調整を追加する前に、まず Java と同じ配色・強調順にする。

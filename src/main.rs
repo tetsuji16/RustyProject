@@ -1372,6 +1372,7 @@ impl GanttApp {
                     let task = &self.snapshot.tasks[row.task_index];
                     self.selected_task_id = task.number;
                     if is_toggle && task.summary {
+                        self.drag = None;
                         self.toggle_summary(task.number);
                         ctx.request_repaint();
                         return;

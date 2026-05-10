@@ -14,6 +14,7 @@ const NAME_TEXT_PAD: f32 = 2.0;
 const NAME_LEADING_PAD: f32 = 16.0;
 const INDICATOR_SIZE: f32 = 12.0;
 const INDICATOR_GAP: f32 = 2.0;
+const INDICATORS_W: f32 = 50.0;
 
 const COLUMN_SPECS: [Column; 7] = [
     Column {
@@ -452,7 +453,11 @@ fn name_icon_rect_from_rect(rect: Rect, task: &TaskSnapshot) -> Rect {
 }
 
 pub fn summary_toggle_icon_rect(table_rect: Rect, row_index: usize, task: &TaskSnapshot) -> Rect {
-    let x = table_rect.left() + ROWNUM_W + NAME_LEADING_PAD + task.indent as f32 * NAME_ICON_W;
+    let x = table_rect.left()
+        + ROWNUM_W
+        + INDICATORS_W
+        + NAME_LEADING_PAD
+        + task.indent as f32 * NAME_ICON_W;
     let y =
         table_rect.top() + HEADER_H + row_index as f32 * ROW_H + ROW_H * 0.5 - NAME_ICON_W * 0.5;
     Rect::from_min_size(pos2(x, y), vec2(NAME_ICON_W, NAME_ICON_W))
@@ -545,8 +550,8 @@ mod tests {
         let task = task(0.0, false, vec![], None, None);
         let icon_rect = summary_toggle_icon_rect(rect, 0, &task);
 
-        assert_eq!(icon_rect.left(), 66.0);
-        assert_eq!(icon_rect.right(), 82.0);
+        assert_eq!(icon_rect.left(), 116.0);
+        assert_eq!(icon_rect.right(), 132.0);
     }
 
     #[test]
@@ -572,7 +577,7 @@ mod tests {
             Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)),
             &snapshot.tasks,
             &visible_rows,
-            pos2(ROWNUM_W + NAME_LEADING_PAD + 2.0, HEADER_H + 2.0),
+            pos2(ROWNUM_W + INDICATORS_W + NAME_LEADING_PAD + 2.0, HEADER_H + 2.0),
         );
 
         assert_eq!(
