@@ -8,12 +8,16 @@ use eframe::egui::{
 use crate::model::TaskSnapshot;
 use crate::ui::gantt_view::{TimelineGeometry, VisibleTaskRow, DAY_H, HEADER_H, MONTH_H, ROW_H};
 
-const BAR_H: f32 = 14.0;
-const SUMMARY_H: f32 = 10.0;
-const MILESTONE_SIZE: f32 = 16.0;
+const BAR_H: f32 = 11.0;
+const MILESTONE_SIZE: f32 = 11.0; // Same height as regular bars
 const BAR_HANDLE_W: f32 = 7.0;
 const BAR_HIT_PAD: f32 = 4.0;
 const BAR_LABEL_PAD: f32 = 7.0;
+
+// Progress bar constants
+const PROGRESS_BAR_H: f32 = 4.0;
+const ANNOTATION_X_OFFSET: f32 = 12.0;
+const ANNOTATION_Y_OFFSET: f32 = 1.0;
 
 #[derive(Clone, Copy)]
 pub enum DragAction {
@@ -187,16 +191,10 @@ pub fn draw_task_bars(
                 task,
                 pos2(chart.date_to_x(task.start) + 12.0, y_center),
                 task.number == selected_task_id,
+                BarAnnotation::Milestone,
             );
         } else if task.summary {
-            let rect = draw_summary_bar(painter, chart, task, y_center);
-            draw_bar_label(
-                painter,
-                chart,
-                task,
-                pos2(rect.right() + BAR_LABEL_PAD, y_center),
-                false,
-            );
+            let _rect = draw_summary_bar(painter, chart, task, y_center);
         } else {
             let rect = draw_normal_bar(
                 painter,
@@ -211,6 +209,7 @@ pub fn draw_task_bars(
                 task,
                 pos2(rect.right() + BAR_LABEL_PAD, y_center),
                 task.number == selected_task_id,
+                BarAnnotation::Normal,
             );
         }
     }
@@ -335,8 +334,8 @@ fn draw_normal_bar(
     if task.progress > 0.0 {
         let progress_w = rect.width() * task.progress.clamp(0.0, 1.0);
         let progress_rect = Rect::from_min_size(
-            pos2(rect.left(), rect.center().y - 2.0),
-            vec2(progress_w, 4.0),
+            pos2(rect.left(), rect.center().y - PROGRESS_BAR_H * 0.5),
+            vec2(progress_w, PROGRESS_BAR_H),
         );
         painter.rect_filled(progress_rect, 0.0, Color32::from_rgb(12, 12, 12));
         if selected && task.progress < 1.0 {
@@ -350,7 +349,10 @@ fn draw_normal_bar(
 
     if task.progress < 1.0 {
         painter.text(
-            pos2(rect.right() + 7.0, rect.center().y),
+            pos2(
+                rect.right() + ANNOTATION_X_OFFSET,
+                rect.center().y + ANNOTATION_Y_OFFSET,
+            ),
             Align2::LEFT_CENTER,
             format!("{}%", (task.progress * 100.0).round() as i32),
             FontId::new(13.0, FontFamily::Proportional),
@@ -369,8 +371,8 @@ fn draw_summary_bar(
 ) -> Rect {
     let x0 = chart.date_to_x(task.start);
     let x1 = chart.date_to_x(task.finish + Duration::days(1));
-    let y = y_center - SUMMARY_H * 0.5;
-    let rect = Rect::from_min_max(pos2(x0, y), pos2(x1.max(x0 + 12.0), y + SUMMARY_H));
+    let y = y_center - BAR_H * 0.5;
+    let rect = Rect::from_min_max(pos2(x0, y), pos2(x1.max(x0 + 12.0), y + BAR_H));
 
     painter.rect_filled(rect, 0.0, Color32::from_rgb(38, 38, 38));
     painter.add(Shape::convex_polygon(
@@ -420,7 +422,15 @@ fn draw_bar_label(
     task: &TaskSnapshot,
     anchor: Pos2,
     selected: bool,
+    annotation: BarAnnotation,
 ) {
+    let text = match annotation {
+        BarAnnotation::Normal => task.resource_names_label(),
+        BarAnnotation::Milestone => task.finish_label(),
+    };
+    if text.trim().is_empty() {
+        return;
+    }
     let label_rect = Rect::from_min_max(
         pos2(chart.gantt_left, anchor.y - ROW_H * 0.5),
         pos2(chart.gantt_left + 1000.0, anchor.y + ROW_H * 0.5),
@@ -429,7 +439,7 @@ fn draw_bar_label(
     clipped.text(
         anchor,
         Align2::LEFT_CENTER,
-        task.name.as_str(),
+        text,
         FontId::new(13.0, FontFamily::Proportional),
         if selected {
             Color32::from_rgb(20, 20, 20)
@@ -437,6 +447,11 @@ fn draw_bar_label(
             Color32::from_rgb(35, 35, 35)
         },
     );
+}
+
+enum BarAnnotation {
+    Normal,
+    Milestone,
 }
 
 pub fn draw_dependency_links(

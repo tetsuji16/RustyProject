@@ -50,6 +50,10 @@ pub struct TaskSnapshot {
     pub finish_text: Option<String>,
     #[serde(default)]
     pub duration_text: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub deadline: Option<NaiveDate>,
 }
 
 impl ProjectSnapshot {
@@ -73,6 +77,8 @@ impl ProjectSnapshot {
                     start_text: None,
                     finish_text: None,
                     duration_text: None,
+                    notes: None,
+                    deadline: None,
                 });
             }};
         }
@@ -544,6 +550,23 @@ impl TaskSnapshot {
                 format!("{days} days")
             }
         }
+    }
+
+    pub fn resource_names_label(&self) -> String {
+        self.resource_names.join(", ")
+    }
+
+    pub fn has_notes(&self) -> bool {
+        self.notes
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    pub fn missed_deadline(&self) -> bool {
+        self.deadline
+            .map(|deadline| self.finish > deadline)
+            .unwrap_or(false)
     }
 }
 

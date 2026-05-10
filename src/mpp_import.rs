@@ -238,6 +238,10 @@ struct MppTask {
     finish_text: Option<String>,
     #[serde(default)]
     duration_text: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    deadline: Option<String>,
 }
 
 impl MppDocument {
@@ -259,6 +263,8 @@ impl MppDocument {
                 start_text: task.start_text,
                 finish_text: task.finish_text,
                 duration_text: task.duration_text,
+                notes: task.notes,
+                deadline: task.deadline.and_then(|value| parse_optional_date(&value)),
             })
             .collect();
 
@@ -272,6 +278,18 @@ impl MppDocument {
 
 fn parse_date(value: &str) -> NaiveDate {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("helper emits valid dates")
+}
+
+fn parse_optional_date(value: &str) -> Option<NaiveDate> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        return Some(date);
+    }
+    value
+        .get(..10)
+        .and_then(|prefix| NaiveDate::parse_from_str(prefix, "%Y-%m-%d").ok())
 }
 
 #[cfg(test)]

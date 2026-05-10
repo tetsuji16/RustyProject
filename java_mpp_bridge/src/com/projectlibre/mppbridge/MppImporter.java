@@ -59,6 +59,10 @@ public final class MppImporter {
             json.append(',');
             appendOptionalField(json, "duration_text", durationText(task));
             json.append(',');
+            appendOptionalField(json, "notes", tryInvokeString(task, "getNotes"));
+            json.append(',');
+            appendOptionalField(json, "deadline", tryInvokeString(task, "getDeadline"));
+            json.append(',');
             appendField(json, "progress", String.valueOf(progress(task)));
             json.append(',');
             appendField(json, "indent", String.valueOf(Math.max(0, outlineLevel(task) - 1)));

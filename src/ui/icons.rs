@@ -16,11 +16,18 @@ pub enum IconKey {
     Preview,
     Undo,
     Redo,
+    TopBarSaveProject,
+    TopBarUndo,
+    TopBarRedo,
     ZoomIn,
     ZoomOut,
     InsertTask,
     InsertResource,
+    AssignResources,
     InsertProject,
+    Gantt,
+    TrackingGantt,
+    Network,
     TaskDetails,
     ProjectDetails,
     ResourceDetails,
@@ -34,20 +41,36 @@ pub enum IconKey {
     Locale,
     Histogram,
     Charts,
+    Rbs,
+    TaskUsageDetail,
     TaskUsage,
+    ResourceUsageDetail,
     ResourceUsage,
     NoSubWindow,
     Info,
     Note,
     Constraint,
     Wbs,
+    Milestone,
+    Calendar,
+    InvalidCalendar,
+    Completed,
+    Leaf,
+    ParentAssignment,
+    MissedDeadline,
+    Subproject,
+    InvalidProject,
+    Delegated,
+    DelegatedMe,
     Plus,
     Minus,
     SaveAs,
     CloseProject,
     PDF,
-    Calendar,
     ProjectsDialog,
+    Projects,
+    Resources,
+    Report,
     SaveBaseline,
     ClearBaseline,
     Update,
@@ -127,6 +150,58 @@ impl ProjectLibreIcons {
         response.on_hover_text(tooltip)
     }
 
+    pub fn large_ribbon_button(
+        &self,
+        ui: &mut Ui,
+        key: IconKey,
+        label: &str,
+        tooltip: &str,
+    ) -> Response {
+        let Some(texture) = self.texture(key) else {
+            return ui
+                .add_enabled(false, egui::Button::new(label))
+                .on_hover_text(tooltip);
+        };
+
+        let size = vec2(72.0, 58.0);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter_at(rect);
+            let fill = if response.is_pointer_button_down_on() {
+                Color32::from_rgb(222, 232, 245)
+            } else if response.hovered() {
+                Color32::from_rgb(244, 244, 244)
+            } else {
+                Color32::from_rgb(239, 239, 239)
+            };
+            painter.rect_filled(rect, 4.0, fill);
+            painter.rect_stroke(
+                rect,
+                4.0,
+                Stroke::new(1.0, Color32::from_rgb(188, 188, 188)),
+                eframe::egui::StrokeKind::Outside,
+            );
+
+            let icon_rect =
+                Rect::from_center_size(pos2(rect.center().x, rect.top() + 17.0), vec2(32.0, 32.0));
+            painter.image(
+                texture.id(),
+                icon_rect,
+                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+            painter.text(
+                pos2(rect.center().x, rect.bottom() - 12.0),
+                Align2::CENTER_CENTER,
+                label,
+                FontId::new(11.0, FontFamily::Proportional),
+                Color32::from_rgb(40, 40, 40),
+            );
+        }
+
+        response.on_hover_text(tooltip)
+    }
+
     pub fn icon_button(&self, ui: &mut Ui, key: IconKey, tooltip: &str, size: Vec2) -> Response {
         let Some(texture) = self.texture(key) else {
             return ui
@@ -151,7 +226,7 @@ impl ProjectLibreIcons {
                 Stroke::new(1.0, Color32::from_rgb(190, 190, 190)),
                 eframe::egui::StrokeKind::Outside,
             );
-            let side = size.x.min(size.y) - 8.0;
+            let side = (size.x.min(size.y) - 4.0).max(8.0);
             let icon_rect = Rect::from_center_size(rect.center(), vec2(side, side));
             painter.image(
                 texture.id(),
@@ -178,7 +253,7 @@ impl ProjectLibreIcons {
                 .on_hover_text(tooltip);
         };
 
-        let size = vec2(width, 19.0);
+        let size = vec2(width, 18.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect);
@@ -208,7 +283,7 @@ impl ProjectLibreIcons {
                 Color32::WHITE,
             );
             painter.text(
-                pos2(rect.left() + 20.0, rect.center().y),
+                pos2(rect.left() + 20.0, rect.center().y - 0.5),
                 Align2::LEFT_CENTER,
                 label,
                 FontId::new(11.0, FontFamily::Proportional),
@@ -220,7 +295,7 @@ impl ProjectLibreIcons {
     }
 
     pub fn text_button(&self, ui: &mut Ui, label: &str, tooltip: &str, width: f32) -> Response {
-        let size = vec2(width, 19.0);
+        let size = vec2(width, 18.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect);
@@ -264,23 +339,23 @@ fn icon_specs() -> Vec<IconSpec> {
         },
         IconSpec {
             key: IconKey::Open,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/document-open.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-open-7.png",
         },
         IconSpec {
             key: IconKey::Save,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/document-save.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-save-5.png",
         },
         IconSpec {
             key: IconKey::New,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/document-new.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-new-6.png",
         },
         IconSpec {
             key: IconKey::Print,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/document-print.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-print-5.png",
         },
         IconSpec {
             key: IconKey::Preview,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/document-print-preview.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-preview.png",
         },
         IconSpec {
             key: IconKey::Undo,
@@ -291,24 +366,52 @@ fn icon_specs() -> Vec<IconSpec> {
             rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/edit-redo.png",
         },
         IconSpec {
+            key: IconKey::TopBarSaveProject,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/disk.png",
+        },
+        IconSpec {
+            key: IconKey::TopBarUndo,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/edit-undo.png",
+        },
+        IconSpec {
+            key: IconKey::TopBarRedo,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/edit-redo.png",
+        },
+        IconSpec {
             key: IconKey::ZoomIn,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/zoom-in.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/zoom-in-5.png",
         },
         IconSpec {
             key: IconKey::ZoomOut,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/zoom-out.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/zoom-out-5.png",
         },
         IconSpec {
             key: IconKey::InsertTask,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/insert-task.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/list-add-5.png",
         },
         IconSpec {
             key: IconKey::InsertResource,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/insert-resource.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/list-add-5.png",
+        },
+        IconSpec {
+            key: IconKey::AssignResources,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/assign-document.gif",
         },
         IconSpec {
             key: IconKey::InsertProject,
             rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/insert-project.png",
+        },
+        IconSpec {
+            key: IconKey::Gantt,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/gantt.png",
+        },
+        IconSpec {
+            key: IconKey::TrackingGantt,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/trackingGantt.png",
+        },
+        IconSpec {
+            key: IconKey::Network,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/network.png",
         },
         IconSpec {
             key: IconKey::TaskDetails,
@@ -344,15 +447,15 @@ fn icon_specs() -> Vec<IconSpec> {
         },
         IconSpec {
             key: IconKey::Help,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/help-hint.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/system-help-3.png",
         },
         IconSpec {
             key: IconKey::Question,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/question.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/question.png",
         },
         IconSpec {
             key: IconKey::Locale,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/globe24.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/big/globe24.png",
         },
         IconSpec {
             key: IconKey::Histogram,
@@ -363,8 +466,20 @@ fn icon_specs() -> Vec<IconSpec> {
             rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/chart.png",
         },
         IconSpec {
+            key: IconKey::Rbs,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/RBS.gif",
+        },
+        IconSpec {
+            key: IconKey::TaskUsageDetail,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/taskUsage.png",
+        },
+        IconSpec {
             key: IconKey::TaskUsage,
             rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/taskUsage.png",
+        },
+        IconSpec {
+            key: IconKey::ResourceUsageDetail,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/resourceUsage.png",
         },
         IconSpec {
             key: IconKey::ResourceUsage,
@@ -376,11 +491,19 @@ fn icon_specs() -> Vec<IconSpec> {
         },
         IconSpec {
             key: IconKey::Info,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/information.gif",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/preferences-system-4.png",
         },
         IconSpec {
             key: IconKey::Note,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/note.gif",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/text-field.png",
+        },
+        IconSpec {
+            key: IconKey::Completed,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ok.png",
+        },
+        IconSpec {
+            key: IconKey::Leaf,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/leaf.png",
         },
         IconSpec {
             key: IconKey::Constraint,
@@ -389,6 +512,38 @@ fn icon_specs() -> Vec<IconSpec> {
         IconSpec {
             key: IconKey::Wbs,
             rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/WBS.gif",
+        },
+        IconSpec {
+            key: IconKey::Milestone,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/milestone.gif",
+        },
+        IconSpec {
+            key: IconKey::InvalidCalendar,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/invalidCalendar.gif",
+        },
+        IconSpec {
+            key: IconKey::ParentAssignment,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/parentAssignment.gif",
+        },
+        IconSpec {
+            key: IconKey::MissedDeadline,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/errorstate.gif",
+        },
+        IconSpec {
+            key: IconKey::Subproject,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/application.gif",
+        },
+        IconSpec {
+            key: IconKey::InvalidProject,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/invalidProject.gif",
+        },
+        IconSpec {
+            key: IconKey::Delegated,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/delegated.gif",
+        },
+        IconSpec {
+            key: IconKey::DelegatedMe,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/delegatedMe.gif",
         },
         IconSpec {
             key: IconKey::Plus,
@@ -400,23 +555,35 @@ fn icon_specs() -> Vec<IconSpec> {
         },
         IconSpec {
             key: IconKey::SaveAs,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/document-save-as.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-save-as-5.png",
         },
         IconSpec {
             key: IconKey::CloseProject,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/close-project.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/document-close-4.png",
         },
         IconSpec {
             key: IconKey::PDF,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/pdf.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/application-pdf.png",
         },
         IconSpec {
             key: IconKey::Calendar,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/calendar24.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/view-calendar.png",
         },
         IconSpec {
             key: IconKey::ProjectsDialog,
             rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/projects24.png",
+        },
+        IconSpec {
+            key: IconKey::Projects,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/projects.png",
+        },
+        IconSpec {
+            key: IconKey::Resources,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/resources.png",
+        },
+        IconSpec {
+            key: IconKey::Report,
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/report.png",
         },
         IconSpec {
             key: IconKey::SaveBaseline,
@@ -432,23 +599,23 @@ fn icon_specs() -> Vec<IconSpec> {
         },
         IconSpec {
             key: IconKey::Paste,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/edit-paste.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/edit-paste-6.png",
         },
         IconSpec {
             key: IconKey::Copy,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/edit-copy.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/edit-copy-6.png",
         },
         IconSpec {
             key: IconKey::Cut,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/edit-cut.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/edit-cut-6.png",
         },
         IconSpec {
             key: IconKey::Delete,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/edit-delete.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/list-remove-5.png",
         },
         IconSpec {
             key: IconKey::Find,
-            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/edit-find-7.png",
+            rel_path: "original files of projectlibre/RustyProject-main/projectlibre_ui/src/com/projectlibre1/pm/graphic/images/ribbon/edit-find-7.png",
         },
     ]
 }

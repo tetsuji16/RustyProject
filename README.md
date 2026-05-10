@@ -21,3 +21,13 @@ If no argument is passed, the app opens the bundled sample project by default.
 
 ![ProjectLibre Gantt - Rust](artifacts/readme_screenshot_clean.png)
 
+## Ribbon Parity
+
+Latest Resource tab verification:
+
+![ProjectLibre Resource Ribbon](resource-window-final.png)
+
+Latest View tab verification:
+
+![ProjectLibre View Ribbon](view-window-final.png)
+

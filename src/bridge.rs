@@ -141,6 +141,8 @@ impl JavaBridge {
                         start_text: None,
                         finish_text: None,
                         duration_text: None,
+                        notes: None,
+                        deadline: None,
                     });
                 }
                 _ => return Err(format!("Malformed bridge response: {line}")),
@@ -210,6 +212,8 @@ pub struct TaskSnapshot {
     pub start_text: Option<String>,
     pub finish_text: Option<String>,
     pub duration_text: Option<String>,
+    pub notes: Option<String>,
+    pub deadline: Option<NaiveDate>,
 }
 
 impl TaskSnapshot {

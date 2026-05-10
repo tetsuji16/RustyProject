@@ -6,10 +6,10 @@ use eframe::egui::{pos2, vec2, Color32, Painter, Rect, Stroke};
 use crate::model::{ProjectSnapshot, TaskSnapshot};
 use crate::ui::{gantt_chart, icons::ProjectLibreIcons, task_table};
 
-pub const HEADER_H: f32 = 54.0;
+pub const HEADER_H: f32 = 30.0;
 pub const MONTH_H: f32 = 28.0;
 pub const DAY_H: f32 = 26.0;
-pub const ROW_H: f32 = 31.0;
+pub const ROW_H: f32 = 19.0;
 pub const SPLITTER_W: f32 = 6.0;
 pub const CHART_MARGIN_X: f32 = 10.0;
 pub const DAY_W: f32 = 24.0;
@@ -70,7 +70,11 @@ impl TimelineGeometry {
 
 pub fn content_width(chart: &TimelineGeometry, left_table_width: f32) -> f32 {
     let duration_days = (chart.end_date - chart.start_date).num_days().max(0) as f32 + 1.0;
-    left_table_width + SPLITTER_W + CHART_MARGIN_X * 2.0 + duration_days * chart.day_width + 240.0
+    left_table_width.max(task_table::DEFAULT_TABLE_W)
+        + SPLITTER_W
+        + CHART_MARGIN_X * 2.0
+        + duration_days * chart.day_width
+        + 240.0
 }
 
 pub fn content_height(visible_rows: usize) -> f32 {
@@ -139,7 +143,7 @@ pub fn draw_workspace(
         Color32::from_rgb(226, 226, 226),
     );
 
-    task_table::draw_headers(painter, left_rect, left_table_width);
+    task_table::draw_headers(painter, left_rect);
     gantt_chart::draw_timeline_headers(painter, gantt_rect, chart);
     task_table::draw_rows(
         painter,
@@ -148,7 +152,6 @@ pub fn draw_workspace(
         visible_rows,
         selected_task_id,
         collapsed_summaries,
-        left_table_width,
         icons,
     );
     gantt_chart::draw_rows_and_grid(

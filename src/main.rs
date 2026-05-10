@@ -17,7 +17,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use ui::icons::{IconKey, ProjectLibreIcons};
 
-const APP_NAME: &str = "ProjectLibre Gantt - Rust";
+const APP_NAME: &str = "ProjectLibre";
 const VIEW_WIDTH: f32 = 2048.0;
 const VIEW_HEIGHT: f32 = 1222.0;
 const SAMPLE_MPP_PATH: &str = "sample data/Commercial construction project plan.mpp";
@@ -228,7 +228,7 @@ impl GanttApp {
                     .stroke(Stroke::new(1.0, Color32::from_rgb(180, 180, 180))),
             )
             .show(ctx, |ui| {
-                ui.set_min_height(126.0);
+                ui.set_min_height(164.0);
                 ui.add_space(2.0);
                 self.draw_top_bar(ui);
                 ui.add_space(1.0);
@@ -241,19 +241,15 @@ impl GanttApp {
         ui.horizontal(|ui| {
             ui.add_space(4.0);
             self.draw_logo(ui);
-            ui.add_space(8.0);
+            ui.add_space(6.0);
 
             self.draw_quick_access_bar(ui);
 
-            ui.add_space(12.0);
-            self.draw_project_selector(ui);
-
-            ui.add_space(8.0);
-            self.draw_project_views(ui);
-            ui.add_space(8.0);
-            self.draw_language_selector(ui);
-            ui.add_space(8.0);
-            self.draw_help_button(ui);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.draw_language_selector(ui);
+                ui.add_space(8.0);
+                self.draw_project_selector(ui);
+            });
         });
     }
 
@@ -264,57 +260,49 @@ impl GanttApp {
             .corner_radius(egui::CornerRadius::same(14))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.add_space(3.0);
+                    ui.add_space(2.0);
                     if self
                         .icons
-                        .icon_button(ui, IconKey::Save, "Save project", vec2(19.0, 19.0))
+                        .icon_button(
+                            ui,
+                            IconKey::TopBarSaveProject,
+                            "Save project",
+                            vec2(26.0, 26.0),
+                        )
                         .clicked()
                     {
                         self.save_project_to_entry_or_dialog();
                     }
                     if self
                         .icons
-                        .icon_button(ui, IconKey::Undo, "Undo", vec2(19.0, 19.0))
+                        .icon_button(ui, IconKey::TopBarUndo, "Undo", vec2(26.0, 26.0))
                         .clicked()
                     {
                         self.undo();
                     }
                     if self
                         .icons
-                        .icon_button(ui, IconKey::Redo, "Redo", vec2(19.0, 19.0))
+                        .icon_button(ui, IconKey::TopBarRedo, "Redo", vec2(26.0, 26.0))
                         .clicked()
                     {
                         self.redo();
                     }
-                    ui.add_space(3.0);
+                    ui.add_space(2.0);
                 });
             });
     }
 
     fn draw_project_selector(&mut self, ui: &mut egui::Ui) {
         let display_name = self.project_display_name();
-        egui::Frame::new()
-            .fill(Color32::from_rgb(248, 248, 248))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(180, 180, 180)))
-            .corner_radius(egui::CornerRadius::same(2))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_space(2.0);
-                    let response = ui.add_sized(
-                        vec2(260.0, 18.0),
-                        egui::Label::new(
-                            egui::RichText::new(display_name)
-                                .size(11.0)
-                                .color(Color32::from_rgb(40, 40, 40)),
-                        ),
-                    );
-                    let _ = response.on_hover_text(self.project_path_input.clone());
-                    if ui.small_button("▾").clicked() {
-                        self.load_project_from_entry_or_dialog();
-                    }
-                    ui.add_space(2.0);
-                });
-            });
+        let mut selected = 0usize;
+        let response = egui::ComboBox::from_id_salt("project_selector")
+            .width(184.0)
+            .selected_text(display_name.clone())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut selected, 0, display_name.clone());
+            })
+            .response;
+        let _ = response.on_hover_text(self.project_path_input.clone());
     }
 
     fn project_display_name(&self) -> String {
@@ -330,70 +318,65 @@ impl GanttApp {
     }
 
     fn window_title(&self) -> String {
-        let path = self.project_path_input.trim();
+        let path = self.project_display_name();
         if path.is_empty() {
             APP_NAME.to_string()
         } else {
-            format!("{path} *")
+            format!("{APP_NAME} - {path} *")
         }
     }
 
     fn draw_project_views(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::new()
-            .fill(Color32::from_rgb(243, 243, 243))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(180, 180, 180)))
-            .corner_radius(egui::CornerRadius::same(1))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let _ = self.icons.icon_button(
-                        ui,
-                        IconKey::Histogram,
-                        "Histogram",
-                        vec2(17.0, 17.0),
-                    );
-                    let _ = self
-                        .icons
-                        .icon_button(ui, IconKey::Charts, "Charts", vec2(17.0, 17.0));
-                    let _ = self.icons.icon_button(
-                        ui,
-                        IconKey::TaskUsage,
-                        "Task Usage",
-                        vec2(17.0, 17.0),
-                    );
-                    let _ = self.icons.icon_button(
-                        ui,
-                        IconKey::ResourceUsage,
-                        "Resource Usage",
-                        vec2(17.0, 17.0),
-                    );
-                    let _ = self.icons.icon_button(
-                        ui,
-                        IconKey::NoSubWindow,
-                        "No Sub Window",
-                        vec2(17.0, 17.0),
-                    );
-                });
-            });
+        let mut style = ui.style().as_ref().clone();
+        style.spacing.item_spacing = vec2(2.0, 0.0);
+        ui.set_style(style);
+        ui.horizontal(|ui| {
+            let _ = self
+                .icons
+                .icon_button(ui, IconKey::Histogram, "Histogram", vec2(18.0, 18.0));
+            let _ = self
+                .icons
+                .icon_button(ui, IconKey::Charts, "Charts", vec2(18.0, 18.0));
+            let _ = self
+                .icons
+                .icon_button(ui, IconKey::TaskUsage, "Task Usage", vec2(18.0, 18.0));
+            let _ = self.icons.icon_button(
+                ui,
+                IconKey::ResourceUsage,
+                "Resource Usage",
+                vec2(18.0, 18.0),
+            );
+            let _ = self
+                .icons
+                .icon_button(ui, IconKey::NoSubWindow, "No sub window", vec2(18.0, 18.0));
+        });
     }
 
     fn draw_language_selector(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::new()
-            .fill(Color32::from_rgb(243, 243, 243))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(180, 180, 180)))
-            .corner_radius(egui::CornerRadius::same(1))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let _ = self
-                        .icons
-                        .icon_button(ui, IconKey::Locale, "Locale", vec2(17.0, 17.0));
-                });
-            });
+        let _ = self
+            .icons
+            .icon_button(ui, IconKey::Locale, "Locale", vec2(26.0, 26.0));
     }
 
     fn draw_help_button(&mut self, ui: &mut egui::Ui) {
         let _ = self
             .icons
-            .icon_button(ui, IconKey::Question, "Help", vec2(17.0, 17.0));
+            .icon_button(ui, IconKey::Help, "Help", vec2(26.0, 26.0));
+    }
+
+    fn draw_clipboard_band(&mut self, ui: &mut egui::Ui) {
+        self.draw_band(ui, "クリップボード", 104.0, |ui, this| {
+            ui.horizontal_top(|ui| {
+                let _ = this
+                    .icons
+                    .large_ribbon_button(ui, IconKey::Paste, "貼り付け", "Paste");
+                ui.add_space(4.0);
+                ui.vertical(|ui| {
+                    let _ = this.icons.row_button(ui, IconKey::Copy, "コピー", "Copy", 92.0);
+                    let _ = this.icons.row_button(ui, IconKey::Cut, "切り取り", "Cut", 92.0);
+                });
+            });
+        });
     }
 
     fn draw_tab_row(&mut self, ui: &mut egui::Ui) {
@@ -414,462 +397,486 @@ impl GanttApp {
                     self.active_tab = tab.0;
                 }
             }
+            let end_group_width = 18.0 * 5.0 + 2.0 * 4.0 + 8.0 + 26.0;
+            let spacer = (ui.available_width() - end_group_width).max(0.0);
+            ui.add_space(spacer);
+            ui.horizontal(|ui| {
+                self.draw_project_views(ui);
+                ui.add_space(8.0);
+                self.draw_help_button(ui);
+            });
         });
     }
 
     fn draw_ribbon_row(&mut self, ui: &mut egui::Ui) {
         match self.active_tab {
-            TopTab::File => {
+            TopTab::File => self.draw_file_tab(ui),
+            TopTab::Task => self.draw_task_tab(ui),
+            TopTab::Resource => self.draw_resource_tab(ui),
+            TopTab::View => self.draw_view_tab(ui),
+        }
+    }
+
+    fn draw_file_tab(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add_space(5.0);
+            self.draw_band(ui, "ファイル", 214.0, |ui, this| {
                 ui.horizontal(|ui| {
-                    ui.add_space(5.0);
-                    self.draw_band(ui, "ファイル", 214.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            if this
-                                .icons
-                                .ribbon_button(ui, IconKey::Save, "保存", "Save project")
-                                .clicked()
-                            {
-                                this.save_project_to_entry_or_dialog();
-                            }
-                            ui.add_space(6.0);
-                            ui.vertical(|ui| {
-                                ui.add_space(2.0);
-                                let _ = this.icons.row_button(
-                                    ui,
-                                    IconKey::Open,
-                                    "開く",
-                                    "Open project",
-                                    112.0,
-                                );
-                                let _ = this.icons.row_button(
-                                    ui,
-                                    IconKey::New,
-                                    "新規",
-                                    "New project",
-                                    112.0,
-                                );
-                                let _ = this.icons.text_button(
-                                    ui,
-                                    "名前を付けて保存",
-                                    "Save as",
-                                    112.0,
-                                );
-                            });
-                            ui.add_space(4.0);
-                            ui.vertical(|ui| {
-                                ui.add_space(2.0);
-                                let _ = this.icons.text_button(ui, "閉じる", "Close project", 92.0);
-                            });
-                        });
+                    if this
+                        .icons
+                        .ribbon_button(ui, IconKey::Save, "保存", "Save project")
+                        .clicked()
+                    {
+                        this.save_project_to_entry_or_dialog();
+                    }
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.add_space(2.0);
+                        if this
+                            .icons
+                            .row_button(ui, IconKey::Open, "開く", "Open project", 112.0)
+                            .clicked()
+                        {
+                            this.load_project_from_dialog();
+                        }
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::New, "新規", "New project", 112.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::SaveAs, "名前を付けて保存", "Save as", 112.0);
                     });
-                    self.draw_band(ui, "印刷", 118.0, |ui, this| {
-                        ui.vertical(|ui| {
-                            ui.add_space(2.0);
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Print, "印刷", "Print", 96.0);
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Preview,
-                                "プレビュー",
-                                "Print preview",
-                                96.0,
-                            );
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::PDF, "PDF", "Export PDF", 96.0);
-                        });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.add_space(2.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::CloseProject,
+                            "閉じる",
+                            "Close project",
+                            92.0,
+                        );
                     });
-                    self.draw_band(ui, "プロジェクト", 334.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            ui.vertical(|ui| {
-                                ui.add_space(2.0);
+                });
+            });
+            self.draw_band(ui, "印刷", 118.0, |ui, this| {
+                ui.vertical(|ui| {
+                    ui.add_space(2.0);
+                    let _ = this.icons.row_button(ui, IconKey::Print, "印刷", "Print", 96.0);
+                    let _ =
+                        this.icons
+                            .row_button(ui, IconKey::Preview, "プレビュー", "Print preview", 96.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::PDF, "PDF", "Export PDF", 96.0);
+                });
+            });
+            self.draw_project_band(ui);
+        });
+    }
+
+    fn draw_project_band(&mut self, ui: &mut egui::Ui) {
+        self.draw_band(ui, "プロジェクト", 360.0, |ui, this| {
+            ui.horizontal_top(|ui| {
+                let _ = this
+                    .icons
+                    .large_ribbon_button(ui, IconKey::Projects, "プロジェクト", "Project");
+                ui.add_space(5.0);
+
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(0.0, 2.0);
+                    ui.vertical(|ui| {
+                        let row_width = 112.0 + 6.0 + 144.0;
+
+                        ui.allocate_ui_with_layout(
+                            vec2(row_width, 18.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
                                 let _ = this.icons.row_button(
                                     ui,
-                                    IconKey::InsertProject,
-                                    "プロジェクト",
-                                    "Project",
-                                    120.0,
-                                );
-                                let _ = this.icons.row_button(
-                                    ui,
-                                    IconKey::ProjectDetails,
+                                    IconKey::Info,
                                     "情報",
                                     "Project information",
-                                    120.0,
+                                    112.0,
                                 );
+                                ui.add_space(6.0);
+                                let _ = this.icons.text_button(
+                                    ui,
+                                    "ベースラインの保存",
+                                    "Save baseline",
+                                    144.0,
+                                );
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            vec2(row_width, 18.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
                                 let _ = this.icons.row_button(
                                     ui,
                                     IconKey::Calendar,
                                     "カレンダー",
                                     "Change working time",
-                                    120.0,
+                                    112.0,
                                 );
-                            });
-                            ui.add_space(6.0);
-                            ui.vertical(|ui| {
-                                ui.add_space(2.0);
-                                let _ = this.icons.text_button(
-                                    ui,
-                                    "プロジェクト ダイアログ",
-                                    "Projects dialog",
-                                    166.0,
-                                );
-                                let _ = this.icons.text_button(
-                                    ui,
-                                    "ベースラインの保存",
-                                    "Save baseline",
-                                    166.0,
-                                );
+                                ui.add_space(6.0);
                                 let _ = this.icons.text_button(
                                     ui,
                                     "ベースラインのクリア",
                                     "Clear baseline",
-                                    166.0,
+                                    144.0,
                                 );
-                                let _ = this.icons.text_button(ui, "更新", "Update project", 166.0);
-                            });
-                        });
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            vec2(row_width, 18.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                let _ = this.icons.row_button(
+                                    ui,
+                                    IconKey::ProjectsDialog,
+                                    "プロジェクト ダイアログ",
+                                    "Projects dialog",
+                                    112.0,
+                                );
+                                ui.add_space(6.0);
+                                let _ = this.icons.text_button(ui, "更新", "Update project", 144.0);
+                            },
+                        );
                     });
                 });
-            }
-            TopTab::Task => {
-                ui.horizontal(|ui| {
-                    ui.add_space(5.0);
-                    self.draw_band(ui, "タスク表示", 254.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Histogram,
-                                "ガント",
-                                "Gantt",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Charts,
-                                "ネットワーク",
-                                "Network",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(ui, IconKey::Wbs, "WBS", "WBS", 92.0);
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::TaskUsage,
-                                "タスク使用状況",
-                                "Task usage",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            if this
-                                .icons
-                                .row_button(ui, IconKey::ZoomIn, "拡大", "Zoom in", 92.0)
-                                .clicked()
-                            {
-                                this.day_width = (this.day_width + 2.0).min(48.0);
-                            }
-                            if this
-                                .icons
-                                .row_button(ui, IconKey::ZoomOut, "縮小", "Zoom out", 92.0)
-                                .clicked()
-                            {
-                                this.day_width = (this.day_width - 2.0).max(14.0);
-                            }
-                        });
+            });
+        });
+    }
+
+    fn draw_task_tab(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add_space(5.0);
+            self.draw_task_views_zoom_band(ui);
+            self.draw_clipboard_band(ui);
+            self.draw_band(ui, "タスク", 468.0, |ui, this| {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        if this
+                            .icons
+                            .row_button(ui, IconKey::InsertTask, "挿入", "Insert task", 88.0)
+                            .clicked()
+                        {
+                            this.add_task_relative(false);
+                        }
+                        if this
+                            .icons
+                            .row_button(ui, IconKey::Delete, "削除", "Delete", 88.0)
+                            .clicked()
+                        {
+                            this.delete_selected_task();
+                        }
                     });
-                    self.draw_band(ui, "クリップボード", 104.0, |ui, this| {
-                        ui.vertical(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Paste,
-                                "貼り付け",
-                                "Paste",
-                                92.0,
-                            );
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Copy, "コピー", "Copy", 92.0);
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Cut, "切り取り", "Cut", 92.0);
-                        });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        if this
+                            .icons
+                            .row_button(ui, IconKey::Indent, "レベル下げ", "Indent", 88.0)
+                            .clicked()
+                        {
+                            this.adjust_selected_indent(1);
+                        }
+                        if this
+                            .icons
+                            .row_button(ui, IconKey::Outdent, "レベル上げ", "Outdent", 88.0)
+                            .clicked()
+                        {
+                            this.adjust_selected_indent(-1);
+                        }
                     });
-                    self.draw_band(ui, "タスク", 360.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            if this
-                                .icons
-                                .row_button(ui, IconKey::InsertTask, "挿入", "Insert task", 92.0)
-                                .clicked()
-                            {
-                                this.add_task_relative(false);
-                            }
-                            if this
-                                .icons
-                                .row_button(ui, IconKey::Delete, "削除", "Delete", 92.0)
-                                .clicked()
-                            {
-                                this.delete_selected_task();
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            if this
-                                .icons
-                                .row_button(ui, IconKey::Indent, "インデント", "Indent", 92.0)
-                                .clicked()
-                            {
-                                this.adjust_selected_indent(1);
-                            }
-                            if this
-                                .icons
-                                .row_button(ui, IconKey::Outdent, "アウトデント", "Outdent", 92.0)
-                                .clicked()
-                            {
-                                this.adjust_selected_indent(-1);
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::InsertLink,
-                                "リンク",
-                                "Link",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::DeleteLink,
-                                "リンク解除",
-                                "Unlink",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::TaskDetails,
-                                "情報",
-                                "Information",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Calendar,
-                                "変更時間",
-                                "Change working time",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Note, "ノート", "Notes", 92.0);
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::InsertResource,
-                                "割り当て",
-                                "Assign resources",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::SaveBaseline,
-                                "ベースライン",
-                                "Save baseline",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ClearBaseline,
-                                "ベースライン削除",
-                                "Clear baseline",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this
-                                .icons
-                                .row_button(ui, IconKey::Find, "検索", "Find", 92.0);
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ScrollToTask,
-                                "タスクへ移動",
-                                "Scroll to task",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Update,
-                                "更新",
-                                "Update tasks",
-                                92.0,
-                            );
-                        });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::InsertLink, "リンク", "Link", 88.0);
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::DeleteLink, "リンク解除", "Unlink", 88.0);
+                    });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        let _ = this
+                            .icons
+                            .row_button(ui, IconKey::Info, "情報", "Information", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::Calendar,
+                            "カレンダー",
+                            "Change working time",
+                            88.0,
+                        );
+                        let _ = this.icons.row_button(ui, IconKey::Note, "メモ", "Notes", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::AssignResources,
+                            "リソース割当",
+                            "Assign resources",
+                            88.0,
+                        );
+                    });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::SaveBaseline,
+                            "ベースラインの保存",
+                            "Save baseline",
+                            88.0,
+                        );
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::ClearBaseline,
+                            "ベースラインのクリア",
+                            "Clear baseline",
+                            88.0,
+                        );
+                    });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        let _ = this.icons.row_button(ui, IconKey::Find, "検索", "Find", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::ScrollToTask,
+                            "タスクへスクロール",
+                            "Scroll to task",
+                            88.0,
+                        );
+                        let _ = this.icons.row_button(ui, IconKey::Update, "更新", "Update tasks", 88.0);
                     });
                 });
-            }
-            TopTab::Resource => {
-                ui.horizontal(|ui| {
-                    ui.add_space(5.0);
-                    self.draw_band(ui, "リソース表示", 254.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ProjectsDialog,
-                                "リソース",
-                                "Resources",
-                                92.0,
-                            );
-                            let _ = this
-                                .icons
-                                .row_button(ui, IconKey::Charts, "RBS", "RBS", 92.0);
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ResourceUsage,
-                                "リソース使用状況",
-                                "Resource usage",
-                                92.0,
-                            );
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::ZoomIn, "拡大", "Zoom in", 92.0);
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ZoomOut,
-                                "縮小",
-                                "Zoom out",
-                                92.0,
-                            );
-                        });
+            });
+        });
+    }
+
+    fn draw_resource_tab(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add_space(5.0);
+            self.draw_resource_views_zoom_band(ui);
+            self.draw_clipboard_band(ui);
+            self.draw_band(ui, "リソース", 270.0, |ui, this| {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::InsertResource,
+                            "挿入",
+                            "Insert resource",
+                            88.0,
+                        );
+                        let _ = this.icons.row_button(ui, IconKey::Delete, "削除", "Delete", 88.0);
                     });
-                    self.draw_band(ui, "クリップボード", 104.0, |ui, this| {
-                        ui.vertical(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Paste,
-                                "貼り付け",
-                                "Paste",
-                                92.0,
-                            );
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Copy, "コピー", "Copy", 92.0);
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Cut, "切り取り", "Cut", 92.0);
-                        });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        let _ =
+                            this.icons.row_button(ui, IconKey::Indent, "レベル下げ", "Indent", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::Outdent,
+                            "レベル上げ",
+                            "Outdent",
+                            88.0,
+                        );
                     });
-                    self.draw_band(ui, "リソース", 270.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::InsertResource,
-                                "挿入",
-                                "Insert resource",
-                                92.0,
-                            );
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Delete, "削除", "Delete", 92.0);
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Indent,
-                                "インデント",
-                                "Indent",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Outdent,
-                                "アウトデント",
-                                "Outdent",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ResourceDetails,
-                                "情報",
-                                "Information",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Calendar,
-                                "変更時間",
-                                "Change working time",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ =
-                                this.icons
-                                    .row_button(ui, IconKey::Note, "ノート", "Notes", 92.0);
-                            let _ = this
-                                .icons
-                                .row_button(ui, IconKey::Find, "検索", "Find", 92.0);
-                        });
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        let _ = this.icons.row_button(ui, IconKey::Info, "情報", "Information", 88.0);
+                        let _ = this.icons.row_button(
+                            ui,
+                            IconKey::Calendar,
+                            "カレンダー",
+                            "Change working time",
+                            88.0,
+                        );
+                        let _ = this.icons.row_button(ui, IconKey::Note, "メモ", "Notes", 88.0);
+                        let _ = this.icons.row_button(ui, IconKey::Find, "検索", "Find", 88.0);
                     });
                 });
-            }
-            TopTab::View => {
-                ui.horizontal(|ui| {
-                    ui.add_space(5.0);
-                    self.draw_band(ui, "ビュー", 302.0, |ui, this| {
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Histogram,
-                                "ヒストグラム",
-                                "Histogram",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::Charts,
-                                "チャート",
-                                "Charts",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::TaskUsage,
-                                "タスク使用状況",
-                                "Task usage",
-                                92.0,
-                            );
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::ResourceUsage,
-                                "リソース使用状況",
-                                "Resource usage",
-                                92.0,
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            let _ = this.icons.row_button(
-                                ui,
-                                IconKey::NoSubWindow,
-                                "サブウィンドウ非表示",
-                                "No sub window",
-                                186.0,
-                            );
-                        });
-                    });
+            });
+        });
+    }
+
+    fn draw_task_views_zoom_band(&mut self, ui: &mut egui::Ui) {
+        self.draw_band(ui, "ビュー", 470.0, |ui, this| {
+            ui.horizontal_top(|ui| {
+                let _ = this
+                    .icons
+                    .large_ribbon_button(ui, IconKey::Gantt, "ガント", "Gantt");
+                ui.add_space(4.0);
+                let _ = this
+                    .icons
+                    .row_button(ui, IconKey::Network, "ネットワーク", "Network", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::Wbs, "WBS", "WBS", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(
+                    ui,
+                    IconKey::TaskUsageDetail,
+                    "タスク配分状況",
+                    "Task usage",
+                    124.0,
+                );
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::ZoomIn, "ズーム イン", "Zoom in", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::ZoomOut, "ズーム アウト", "Zoom out", 88.0);
+            });
+        });
+    }
+
+    fn draw_resource_views_zoom_band(&mut self, ui: &mut egui::Ui) {
+        self.draw_band(ui, "ビュー", 480.0, |ui, this| {
+            ui.horizontal_top(|ui| {
+                let _ = this
+                    .icons
+                    .large_ribbon_button(ui, IconKey::Resources, "リソース", "Resources");
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::Rbs, "RBS", "RBS", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(
+                    ui,
+                    IconKey::ResourceUsageDetail,
+                    "リソース配分状況",
+                    "Resource usage",
+                    124.0,
+                );
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::ZoomIn, "ズーム イン", "Zoom in", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::ZoomOut, "ズーム アウト", "Zoom out", 88.0);
+            });
+        });
+    }
+
+    fn draw_task_views_band(&mut self, ui: &mut egui::Ui) {
+        self.draw_band(ui, "タスク ビュー", 384.0, |ui, this| {
+            ui.horizontal_top(|ui| {
+                let _ = this
+                    .icons
+                    .large_ribbon_button(ui, IconKey::Gantt, "ガント", "Gantt");
+                ui.add_space(4.0);
+                let _ = this
+                    .icons
+                    .row_button(ui, IconKey::Network, "ネットワーク", "Network", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::Wbs, "WBS", "WBS", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(
+                    ui,
+                    IconKey::TaskUsageDetail,
+                    "タスク配分状況",
+                    "Task usage",
+                    124.0,
+                );
+            });
+        });
+    }
+
+    fn draw_resource_views_band(&mut self, ui: &mut egui::Ui) {
+        self.draw_band(ui, "リソース ビュー", 292.0, |ui, this| {
+            ui.horizontal_top(|ui| {
+                let _ = this
+                    .icons
+                    .large_ribbon_button(ui, IconKey::Resources, "リソース", "Resources");
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(ui, IconKey::Rbs, "RBS", "RBS", 88.0);
+                ui.add_space(4.0);
+                let _ = this.icons.row_button(
+                    ui,
+                    IconKey::ResourceUsageDetail,
+                    "リソース配分状況",
+                    "Resource usage",
+                    124.0,
+                );
+            });
+        });
+    }
+
+    fn draw_view_tab(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.add_space(5.0);
+            self.draw_task_views_band(ui);
+            self.draw_resource_views_band(ui);
+            self.draw_band(ui, "その他 ビュー", 146.0, |ui, this| {
+                ui.vertical(|ui| {
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::Projects, "プロジェクト", "Projects", 124.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::Report, "レポート", "Report", 124.0);
                 });
-            }
-        }
+            });
+            self.draw_band(ui, "サブ ビュー", 614.0, |ui, this| {
+                ui.horizontal_top(|ui| {
+                    let _ = this.icons.row_button(
+                        ui,
+                        IconKey::Histogram,
+                        "ヒストグラム",
+                        "Histogram",
+                        90.0,
+                    );
+                    ui.add_space(4.0);
+                    let _ = this
+                        .icons
+                        .row_button(ui, IconKey::Charts, "チャート", "Charts", 90.0);
+                    ui.add_space(4.0);
+                    let _ = this.icons.row_button(
+                        ui,
+                        IconKey::TaskUsage,
+                        "タスク配分状況",
+                        "Task usage",
+                        124.0,
+                    );
+                    ui.add_space(4.0);
+                    let _ = this.icons.row_button(
+                        ui,
+                        IconKey::ResourceUsage,
+                        "リソース配分状況",
+                        "Resource usage",
+                        124.0,
+                    );
+                    ui.add_space(4.0);
+                    let _ = this.icons.row_button(
+                        ui,
+                        IconKey::NoSubWindow,
+                        "サブ ウィンドウ非表示",
+                        "No sub window",
+                        160.0,
+                    );
+                });
+            });
+            self.draw_band(ui, "フィルター", 214.0, |ui, this| {
+                ui.vertical(|ui| {
+                    ui.add_space(1.0);
+                    this.draw_filter_combo(ui, "フィルターなし", 0);
+                    this.draw_filter_combo(ui, "並べ替えなし", 1);
+                    this.draw_filter_combo(ui, "グループなし", 2);
+                });
+            });
+        });
+    }
+
+    fn draw_filter_combo(&self, ui: &mut egui::Ui, selected_text: &str, index: usize) {
+        ui.scope(|ui| {
+            ui.spacing_mut().interact_size = vec2(150.0, 28.0);
+            egui::ComboBox::from_id_salt(("view_filter_combo", index))
+                .width(150.0)
+                .selected_text(selected_text)
+                .show_ui(ui, |ui| {
+                    let _ = ui.selectable_label(true, selected_text);
+                    ui.separator();
+                    let _ = ui.selectable_label(false, "なし");
+                    let _ = ui.selectable_label(false, "標準");
+                    let _ = ui.selectable_label(false, "カスタム");
+                });
+        });
     }
 
     fn draw_band<F>(&mut self, ui: &mut egui::Ui, title: &str, min_width: f32, mut build: F)
@@ -877,17 +884,20 @@ impl GanttApp {
         F: FnMut(&mut egui::Ui, &mut Self),
     {
         egui::Frame::new()
-            .fill(Color32::from_rgb(244, 244, 244))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(188, 188, 188)))
+            .fill(Color32::from_rgb(245, 245, 245))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(187, 187, 187)))
             .corner_radius(egui::CornerRadius::same(1))
             .show(ui, |ui| {
                 ui.set_min_width(min_width);
                 ui.vertical(|ui| {
                     ui.add_space(1.0);
-                    ui.horizontal(|ui| {
-                        build(ui, self);
+                    ui.scope(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                        ui.horizontal(|ui| {
+                            build(ui, self);
+                        });
                     });
-                    ui.add_space(2.0);
+                    ui.add_space(0.0);
                     ui.horizontal_centered(|ui| {
                         ui.label(
                             egui::RichText::new(title)
@@ -897,7 +907,7 @@ impl GanttApp {
                     });
                 });
             });
-        ui.add_space(3.0);
+        ui.add_space(2.0);
     }
 
     fn draw_logo(&self, ui: &mut egui::Ui) {
@@ -920,7 +930,12 @@ impl GanttApp {
                     Color32::WHITE,
                 );
             }
-            let _ = response.on_hover_text("ProjectLibre");
+            let response = response.on_hover_text("ProjectLibre");
+            if response.clicked() {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/C", "start", "", "https://www.projectlibre.com"])
+                    .spawn();
+            }
         } else {
             ui.label(
                 egui::RichText::new("ProjectLibre")
@@ -941,14 +956,6 @@ impl GanttApp {
             task.indent = next_indent;
         }
         self.snapshot.normalize();
-    }
-
-    fn load_project_from_entry_or_dialog(&mut self) {
-        let path = self.project_path_input.trim().to_string();
-        if !path.is_empty() && Path::new(&path).exists() {
-            return self.load_project_from_path(&path);
-        }
-        self.load_project_from_dialog();
     }
 
     fn load_project_from_dialog(&mut self) {
@@ -1160,6 +1167,8 @@ impl GanttApp {
             start_text: None,
             finish_text: None,
             duration_text: None,
+            notes: None,
+            deadline: None,
         };
         self.snapshot.insert_task_after(insert_at - 1, task);
         self.selected_task_id = new_id;

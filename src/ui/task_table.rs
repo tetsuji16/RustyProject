@@ -1,73 +1,77 @@
 use std::collections::HashSet;
 
-use eframe::egui::{
-    pos2, vec2, Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Shape, Stroke,
-};
+use eframe::egui::{pos2, vec2, Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke};
 
 use crate::model::TaskSnapshot;
 use crate::ui::gantt_view::{TimelineGeometry, VisibleTaskRow, HEADER_H, ROW_H};
 use crate::ui::icons::{IconKey, ProjectLibreIcons};
 
-const ROWNUM_W: f32 = 32.0;
-const INDICATORS_W: f32 = 30.0;
-const NAME_W: f32 = 140.0;
-const DURATION_W: f32 = 60.0;
-const START_W: f32 = 80.0;
-const FINISH_W: f32 = 80.0;
-const PREDECESSORS_W: f32 = 72.0;
-const RESOURCE_W: f32 = 82.0;
+pub const ROWNUM_W: f32 = 40.0;
+pub const DEFAULT_TABLE_W: f32 = 614.0;
 
-pub const DEFAULT_TABLE_W: f32 =
-    INDICATORS_W + NAME_W + DURATION_W + START_W + FINISH_W + PREDECESSORS_W + RESOURCE_W;
+const NAME_ICON_W: f32 = 16.0;
+const NAME_TEXT_PAD: f32 = 2.0;
+const INDICATOR_SIZE: f32 = 12.0;
+const INDICATOR_GAP: f32 = 2.0;
 
-#[derive(Clone, Copy)]
-pub enum TableColumn {
-    Indicators,
-    Name,
-    Duration,
-    Start,
-    Finish,
-    Predecessors,
-    ResourceNames,
-}
-
-impl TableColumn {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Indicators => "",
-            Self::Name => "名前",
-            Self::Duration => "期間",
-            Self::Start => "開始",
-            Self::Finish => "終了",
-            Self::Predecessors => "先行",
-            Self::ResourceNames => "リソース名",
-        }
-    }
-
-    fn width(self, table_width: f32) -> f32 {
-        match self {
-            Self::Indicators => INDICATORS_W,
-            Self::Name => name_width(table_width),
-            Self::Duration => DURATION_W,
-            Self::Start => START_W,
-            Self::Finish => FINISH_W,
-            Self::Predecessors => PREDECESSORS_W,
-            Self::ResourceNames => RESOURCE_W,
-        }
-    }
-}
-
-const COLUMNS: [TableColumn; 7] = [
-    TableColumn::Indicators,
-    TableColumn::Name,
-    TableColumn::Duration,
-    TableColumn::Start,
-    TableColumn::Finish,
-    TableColumn::Predecessors,
-    TableColumn::ResourceNames,
+const COLUMN_SPECS: [Column; 7] = [
+    Column {
+        field_name: "indicators",
+        label: "",
+        width: 50.0,
+    },
+    Column {
+        field_name: "name",
+        label: "名前",
+        width: 150.0,
+    },
+    Column {
+        field_name: "duration",
+        label: "期間",
+        width: 60.0,
+    },
+    Column {
+        field_name: "start",
+        label: "開始",
+        width: 80.0,
+    },
+    Column {
+        field_name: "finish",
+        label: "終了",
+        width: 80.0,
+    },
+    Column {
+        field_name: "predecessors",
+        label: "先行",
+        width: 72.0,
+    },
+    Column {
+        field_name: "resourceNames",
+        label: "リソース名",
+        width: 82.0,
+    },
 ];
 
-pub fn draw_headers(painter: &Painter, rect: Rect, table_width: f32) {
+#[derive(Clone, Copy)]
+pub struct Column {
+    pub field_name: &'static str,
+    pub label: &'static str,
+    pub width: f32,
+}
+
+pub struct ColumnModel {
+    pub columns: &'static [Column],
+}
+
+impl ColumnModel {
+    pub fn new() -> Self {
+        Self {
+            columns: &COLUMN_SPECS,
+        }
+    }
+}
+
+pub fn draw_headers(painter: &Painter, rect: Rect) {
     let border = Color32::from_rgb(175, 175, 175);
     let header_rect = Rect::from_min_size(rect.min, vec2(rect.width(), HEADER_H));
 
@@ -87,17 +91,11 @@ pub fn draw_headers(painter: &Painter, rect: Rect, table_width: f32) {
         ],
         Stroke::new(1.0, border),
     );
-    painter.text(
-        rownum_rect.center(),
-        Align2::CENTER_CENTER,
-        "",
-        FontId::new(14.0, FontFamily::Proportional),
-        Color32::from_rgb(38, 38, 38),
-    );
 
-    for (column, column_rect) in
-        column_rects(rect.left() + ROWNUM_W, rect.top(), HEADER_H, table_width)
-    {
+    let column_model = ColumnModel::new();
+    let mut x = rect.left() + ROWNUM_W;
+    for column in column_model.columns {
+        let column_rect = Rect::from_min_size(pos2(x, rect.top()), vec2(column.width, HEADER_H));
         painter.line_segment(
             [
                 pos2(column_rect.right(), column_rect.top()),
@@ -105,18 +103,18 @@ pub fn draw_headers(painter: &Painter, rect: Rect, table_width: f32) {
             ],
             Stroke::new(1.0, border),
         );
-        let label = column.label();
-        if !label.is_empty() {
+        if column.label.is_empty() {
+            draw_indicator_header(painter, column_rect.center());
+        } else {
             painter.text(
                 column_rect.center(),
                 Align2::CENTER_CENTER,
-                label,
+                column.label,
                 FontId::new(14.0, FontFamily::Proportional),
                 Color32::from_rgb(38, 38, 38),
             );
-        } else {
-            draw_indicator_header(painter, column_rect.center());
         }
+        x += column.width;
     }
 }
 
@@ -127,10 +125,10 @@ pub fn draw_rows(
     visible_rows: &[VisibleTaskRow],
     selected_task_id: usize,
     collapsed_summaries: &HashSet<usize>,
-    table_width: f32,
     icons: &ProjectLibreIcons,
 ) {
     let line = Color32::from_rgb(214, 214, 214);
+    let column_model = ColumnModel::new();
     for (row_index, row) in visible_rows.iter().enumerate() {
         let task = &tasks[row.task_index];
         let y = rect.top() + HEADER_H + row_index as f32 * ROW_H;
@@ -175,7 +173,9 @@ pub fn draw_rows(
             text,
         );
 
-        for (column, column_rect) in column_rects(rect.left() + ROWNUM_W, y, ROW_H, table_width) {
+        let mut x = rect.left() + ROWNUM_W;
+        for column in column_model.columns {
+            let column_rect = Rect::from_min_size(pos2(x, y), vec2(column.width, ROW_H));
             painter.line_segment(
                 [
                     pos2(column_rect.right(), y),
@@ -193,6 +193,7 @@ pub fn draw_rows(
                 collapsed_summaries,
                 icons,
             );
+            x += column.width;
         }
     }
 }
@@ -210,22 +211,17 @@ pub fn hit_test_row_toggle(
     let row_index = chart.row_at(pointer, visible_rows.len())?;
     let row = visible_rows[row_index];
     let task = &tasks[row.task_index];
-    let name_left = column_left(
-        chart.origin_x + ROWNUM_W,
-        TableColumn::Name,
-        DEFAULT_TABLE_W,
-    );
-    let toggle_x = name_left + 8.0 + task.indent as f32 * 18.0;
-    let toggle_rect = Rect::from_center_size(
-        pos2(toggle_x, chart.row_top(row_index) + ROW_H * 0.5),
-        vec2(20.0, 18.0),
-    );
-    Some((row, task.summary && toggle_rect.contains(pointer)))
+    if !task.summary {
+        return None;
+    }
+
+    let icon_rect = name_icon_rect(chart, row_index, task);
+    Some((row, icon_rect.expand(4.0).contains(pointer)))
 }
 
 fn draw_cell(
     painter: &Painter,
-    column: TableColumn,
+    column: &Column,
     rect: Rect,
     task: &TaskSnapshot,
     selected: bool,
@@ -233,9 +229,9 @@ fn draw_cell(
     collapsed_summaries: &HashSet<usize>,
     icons: &ProjectLibreIcons,
 ) {
-    match column {
-        TableColumn::Indicators => draw_indicators(painter, rect, task, selected, icons),
-        TableColumn::Name => draw_name(
+    match column.field_name {
+        "indicators" => draw_indicators(painter, rect, task, icons),
+        "name" => draw_name(
             painter,
             rect,
             task,
@@ -244,7 +240,7 @@ fn draw_cell(
             collapsed_summaries,
             icons,
         ),
-        TableColumn::Duration => draw_text(
+        "duration" => draw_text(
             painter,
             rect.shrink2(vec2(8.0, 0.0)),
             task.duration_label(),
@@ -252,7 +248,7 @@ fn draw_cell(
             color,
             14.0,
         ),
-        TableColumn::Start => draw_text(
+        "start" => draw_text(
             painter,
             rect.shrink2(vec2(8.0, 0.0)),
             task.start_label(),
@@ -260,7 +256,7 @@ fn draw_cell(
             color,
             13.0,
         ),
-        TableColumn::Finish => draw_text(
+        "finish" => draw_text(
             painter,
             rect.shrink2(vec2(8.0, 0.0)),
             task.finish_label(),
@@ -268,30 +264,27 @@ fn draw_cell(
             color,
             13.0,
         ),
-        TableColumn::Predecessors => {
-            let value = task
-                .predecessors
+        "predecessors" => draw_text(
+            painter,
+            rect.shrink2(vec2(8.0, 0.0)),
+            task.predecessors
                 .iter()
                 .map(|id| id.to_string())
                 .collect::<Vec<_>>()
-                .join(",");
-            draw_text(
-                painter,
-                rect.shrink2(vec2(8.0, 0.0)),
-                value,
-                Align2::LEFT_CENTER,
-                color,
-                14.0,
-            );
-        }
-        TableColumn::ResourceNames => draw_text(
-            painter,
-            rect.shrink2(vec2(8.0, 0.0)),
-            task.resource_names.join(", "),
+                .join(","),
             Align2::LEFT_CENTER,
             color,
             14.0,
         ),
+        "resourceNames" => draw_text(
+            painter,
+            rect.shrink2(vec2(8.0, 0.0)),
+            task.resource_names_label(),
+            Align2::LEFT_CENTER,
+            color,
+            14.0,
+        ),
+        _ => {}
     }
 }
 
@@ -304,107 +297,70 @@ fn draw_name(
     collapsed_summaries: &HashSet<usize>,
     icons: &ProjectLibreIcons,
 ) {
-    let x = rect.left() + 8.0 + task.indent as f32 * 18.0;
-    let center_y = rect.center().y;
+    let icon_rect = name_icon_rect_from_rect(rect, task);
+    let text_x = icon_rect.right() + NAME_TEXT_PAD;
+    let clip = painter.with_clip_rect(rect);
+
     if task.summary {
-        let expanded = !collapsed_summaries.contains(&task.number);
-        draw_expand_box(painter, pos2(x, center_y), selected, expanded, icons);
-    } else if task.milestone {
-        draw_milestone_icon(painter, pos2(x + 1.0, center_y), selected);
+        draw_tree_icon(
+            painter,
+            icon_rect,
+            if collapsed_summaries.contains(&task.number) {
+                IconKey::Plus
+            } else {
+                IconKey::Minus
+            },
+            selected,
+            icons,
+        );
+    } else {
+        draw_tree_icon(painter, icon_rect, IconKey::Leaf, selected, icons);
     }
 
-    let name_x = x + if task.summary || task.milestone {
-        18.0
-    } else {
-        0.0
-    };
-    let clipped = painter.with_clip_rect(rect);
-    clipped.text(
-        pos2(name_x, center_y),
+    clip.text(
+        pos2(text_x, rect.center().y),
         Align2::LEFT_CENTER,
-        task.name.clone(),
-        FontId::new(
-            if task.summary { 15.0 } else { 14.0 },
-            FontFamily::Proportional,
-        ),
+        task.name.as_str(),
+        FontId::new(14.0, FontFamily::Proportional),
         color,
     );
 }
 
-fn draw_indicators(
-    painter: &Painter,
-    rect: Rect,
-    task: &TaskSnapshot,
-    selected: bool,
-    icons: &ProjectLibreIcons,
-) {
-    let size = vec2(12.0, 12.0);
-    let center = rect.center();
-    let image_rect = Rect::from_center_size(center, size);
-    if task.summary {
-        if let Some(texture) = icons.texture(IconKey::Wbs) {
+fn draw_indicators(painter: &Painter, rect: Rect, task: &TaskSnapshot, icons: &ProjectLibreIcons) {
+    let mut x = rect.left() + 2.0;
+    let y = rect.center().y - INDICATOR_SIZE * 0.5;
+
+    for indicator in task_indicator_icons(task) {
+        if let Some(texture) = icons.texture(indicator) {
+            let icon_rect = Rect::from_min_size(pos2(x, y), vec2(INDICATOR_SIZE, INDICATOR_SIZE));
             painter.image(
                 texture.id(),
-                image_rect,
+                icon_rect,
                 Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
                 Color32::WHITE,
             );
-        } else {
-            painter.rect_filled(image_rect, 1.0, Color32::from_rgb(78, 78, 78));
+            x += INDICATOR_SIZE + INDICATOR_GAP;
         }
-    } else if task.milestone {
-        draw_milestone_icon(painter, rect.center(), selected);
-    } else if !task.predecessors.is_empty() {
-        if let Some(texture) = icons.texture(IconKey::Constraint) {
-            painter.image(
-                texture.id(),
-                image_rect,
-                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        } else {
-            let color = if selected {
-                Color32::WHITE
-            } else {
-                Color32::from_rgb(78, 78, 78)
-            };
-            let y = rect.center().y;
-            painter.line_segment(
-                [
-                    pos2(rect.center().x - 7.0, y),
-                    pos2(rect.center().x + 5.0, y),
-                ],
-                Stroke::new(1.5, color),
-            );
-            painter.add(Shape::convex_polygon(
-                vec![
-                    pos2(rect.center().x + 5.0, y - 4.0),
-                    pos2(rect.center().x + 10.0, y),
-                    pos2(rect.center().x + 5.0, y + 4.0),
-                ],
-                color,
-                Stroke::NONE,
-            ));
-        }
-    } else if let Some(texture) = icons.texture(IconKey::Info) {
-        painter.image(
-            texture.id(),
-            image_rect,
-            Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-            Color32::WHITE,
-        );
     }
 }
 
-fn draw_indicator_header(painter: &Painter, center: Pos2) {
-    painter.circle_stroke(center, 5.0, Stroke::new(1.2, Color32::from_rgb(80, 80, 80)));
-    painter.line_segment(
-        [
-            pos2(center.x, center.y - 2.5),
-            pos2(center.x, center.y + 2.0),
-        ],
-        Stroke::new(1.1, Color32::from_rgb(80, 80, 80)),
-    );
+fn task_indicator_icons(task: &TaskSnapshot) -> Vec<IconKey> {
+    let mut out = Vec::new();
+
+    if task.progress >= 1.0 {
+        out.push(IconKey::Completed);
+    }
+    if task.has_notes() {
+        out.push(IconKey::Note);
+    }
+    if task.summary && !task.resource_names.is_empty() {
+        out.push(IconKey::ParentAssignment);
+    }
+    if task.missed_deadline() {
+        out.push(IconKey::MissedDeadline);
+    }
+
+    out
 }
 
 fn draw_text(
@@ -430,106 +386,77 @@ fn draw_text(
     );
 }
 
-fn draw_expand_box(
+fn draw_tree_icon(
     painter: &Painter,
-    center: Pos2,
-    inverted: bool,
-    expanded: bool,
+    rect: Rect,
+    icon: IconKey,
+    selected: bool,
     icons: &ProjectLibreIcons,
 ) {
-    let rect = Rect::from_center_size(center, vec2(11.0, 11.0));
-    let icon_key = if expanded {
-        IconKey::Minus
-    } else {
-        IconKey::Plus
-    };
-    if let Some(texture) = icons.texture(icon_key) {
+    if let Some(texture) = icons.texture(icon) {
         painter.image(
             texture.id(),
             rect,
             Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
             Color32::WHITE,
         );
+        return;
+    }
+
+    let fill = if selected {
+        Color32::from_rgb(110, 110, 110)
     } else {
-        let fill = if inverted {
-            Color32::from_rgb(110, 110, 110)
-        } else {
-            Color32::from_rgb(245, 245, 245)
-        };
-        let stroke = if inverted {
-            Color32::WHITE
-        } else {
-            Color32::from_rgb(50, 50, 50)
-        };
-        painter.rect_filled(rect, 1.0, fill);
-        painter.rect_stroke(
-            rect,
-            1.0,
-            Stroke::new(1.0, stroke),
-            eframe::egui::StrokeKind::Outside,
-        );
+        Color32::from_rgb(245, 245, 245)
+    };
+    let stroke = if selected {
+        Color32::WHITE
+    } else {
+        Color32::from_rgb(50, 50, 50)
+    };
+    painter.rect_filled(rect, 1.0, fill);
+    painter.rect_stroke(
+        rect,
+        1.0,
+        Stroke::new(1.0, stroke),
+        eframe::egui::StrokeKind::Outside,
+    );
+    painter.line_segment(
+        [
+            pos2(rect.left() + 3.0, rect.center().y),
+            pos2(rect.right() - 3.0, rect.center().y),
+        ],
+        Stroke::new(1.5, stroke),
+    );
+    if icon == IconKey::Plus {
         painter.line_segment(
             [
-                pos2(rect.left() + 3.0, rect.center().y),
-                pos2(rect.right() - 3.0, rect.center().y),
+                pos2(rect.center().x, rect.top() + 3.0),
+                pos2(rect.center().x, rect.bottom() - 3.0),
             ],
             Stroke::new(1.5, stroke),
         );
-        if !expanded {
-            painter.line_segment(
-                [
-                    pos2(rect.center().x, rect.top() + 3.0),
-                    pos2(rect.center().x, rect.bottom() - 3.0),
-                ],
-                Stroke::new(1.5, stroke),
-            );
-        }
     }
 }
 
-fn draw_milestone_icon(painter: &Painter, center: Pos2, inverted: bool) {
-    let half = 5.0;
-    let fill = if inverted {
-        Color32::WHITE
-    } else {
-        Color32::from_rgb(85, 85, 85)
-    };
-    painter.add(Shape::convex_polygon(
-        vec![
-            pos2(center.x, center.y - half),
-            pos2(center.x + half, center.y),
-            pos2(center.x, center.y + half),
-            pos2(center.x - half, center.y),
+fn name_icon_rect_from_rect(rect: Rect, task: &TaskSnapshot) -> Rect {
+    let x = rect.left() + task.indent as f32 * NAME_ICON_W;
+    let y = rect.center().y - NAME_ICON_W * 0.5;
+    Rect::from_min_size(pos2(x, y), vec2(NAME_ICON_W, NAME_ICON_W))
+}
+
+fn name_icon_rect(chart: &TimelineGeometry, row_index: usize, task: &TaskSnapshot) -> Rect {
+    let x = chart.origin_x + ROWNUM_W + task.indent as f32 * NAME_ICON_W;
+    let y = chart.row_top(row_index) + ROW_H * 0.5 - NAME_ICON_W * 0.5;
+    Rect::from_min_size(pos2(x, y), vec2(NAME_ICON_W, NAME_ICON_W))
+}
+
+fn draw_indicator_header(painter: &Painter, center: Pos2) {
+    painter.circle_stroke(center, 5.0, Stroke::new(1.2, Color32::from_rgb(80, 80, 80)));
+    painter.line_segment(
+        [
+            pos2(center.x, center.y - 2.5),
+            pos2(center.x, center.y + 2.0),
         ],
-        fill,
-        Stroke::NONE,
-    ));
-}
-
-fn column_rects(left: f32, top: f32, height: f32, table_width: f32) -> Vec<(TableColumn, Rect)> {
-    let mut x = left;
-    COLUMNS
-        .iter()
-        .map(|column| {
-            let width = column.width(table_width);
-            let rect = Rect::from_min_size(pos2(x, top), vec2(width, height));
-            x += width;
-            (*column, rect)
-        })
-        .collect()
-}
-
-fn column_left(left: f32, target: TableColumn, table_width: f32) -> f32 {
-    let mut x = left;
-    for column in COLUMNS {
-        if std::mem::discriminant(&column) == std::mem::discriminant(&target) {
-            return x;
-        }
-        x += column.width(table_width);
-    }
-    x
-}
-
-fn name_width(table_width: f32) -> f32 {
-    (table_width - (DEFAULT_TABLE_W - NAME_W)).max(180.0)
+        Stroke::new(1.1, Color32::from_rgb(80, 80, 80)),
+    );
 }

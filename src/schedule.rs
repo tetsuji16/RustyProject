@@ -180,6 +180,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
             TaskSnapshot {
                 number: 2,
@@ -195,6 +197,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
             TaskSnapshot {
                 number: 3,
@@ -210,6 +214,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
         ]);
 
@@ -235,6 +241,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
             TaskSnapshot {
                 number: 2,
@@ -250,6 +258,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
         ]);
 
@@ -280,6 +290,8 @@ mod tests {
             start_text: None,
             finish_text: None,
             duration_text: None,
+            notes: None,
+            deadline: None,
         }]);
 
         snapshot.normalize();
@@ -305,6 +317,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
             TaskSnapshot {
                 number: 2,
@@ -320,6 +334,8 @@ mod tests {
                 start_text: None,
                 finish_text: None,
                 duration_text: None,
+                notes: None,
+                deadline: None,
             },
         ]);
 
